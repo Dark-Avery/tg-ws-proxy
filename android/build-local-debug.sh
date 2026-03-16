@@ -80,6 +80,8 @@ prefetch_chaquopy_runtime() {
     "com/chaquo/python/runtime/libchaquopy_java/17.0.0/libchaquopy_java-17.0.0-3.12-x86_64.so"
     "com/chaquo/python/target/3.12.12-0/target-3.12.12-0.pom"
     "com/chaquo/python/target/3.12.12-0/target-3.12.12-0-arm64-v8a.zip"
+    "com/chaquo/python/target/3.12.12-0/target-3.12.12-0-stdlib-pyc.zip"
+    "com/chaquo/python/target/3.12.12-0/target-3.12.12-0-stdlib.zip"
     "com/chaquo/python/target/3.12.12-0/target-3.12.12-0-x86_64.zip"
   )
 

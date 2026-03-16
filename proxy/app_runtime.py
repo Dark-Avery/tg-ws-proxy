@@ -36,7 +36,8 @@ class ProxyAppRuntime:
         self.default_config = dict(default_config or DEFAULT_CONFIG)
         self.log = logging.getLogger(logger_name)
         self.on_error = on_error
-        self.parse_dc_ip_list = parse_dc_ip_list or tg_ws_proxy.parse_dc_ip_list
+        self.parse_dc_ip_list = parse_dc_ip_list or \
+            tg_ws_proxy.parse_dc_ip_list
         self.run_proxy = run_proxy or tg_ws_proxy._run
         self.thread_factory = thread_factory or threading.Thread
         self.config: dict = {}

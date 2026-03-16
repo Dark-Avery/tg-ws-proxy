@@ -40,6 +40,51 @@ jobs:
           path: |
             dist/TgWsProxy.exe
 
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses > /dev/null
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Build Android debug APK
+        run: |
+          chmod +x gradlew build-local-debug.sh
+          LOCAL_CHAQUOPY_REPO="$GITHUB_WORKSPACE/android/.m2-chaquopy-ci" ./build-local-debug.sh
+
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/tg-ws-proxy-android-debug.apk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TgWsProxy-android-debug
+          path: android/app/build/outputs/apk/debug/tg-ws-proxy-android-debug.apk
+
   build-win7:
     runs-on: windows-latest
     steps:
@@ -71,7 +116,7 @@ jobs:
           path: dist/TgWsProxy-win7.exe
 
   release:
-    needs: [build, build-win7]
+    needs: [build, build-win7, build-android]
     runs-on: ubuntu-latest
     steps:
       - name: Download main build
@@ -86,6 +131,12 @@ jobs:
           name: TgWsProxy-win7
           path: dist
 
+      - name: Download Android build
+        uses: actions/download-artifact@v4
+        with:
+          name: TgWsProxy-android-debug
+          path: dist
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -96,6 +147,7 @@ jobs:
           files: |
             dist/TgWsProxy.exe
             dist/TgWsProxy-win7.exe
+            dist/tg-ws-proxy-android-debug.apk
           draft: false
           prerelease: false
         env:
