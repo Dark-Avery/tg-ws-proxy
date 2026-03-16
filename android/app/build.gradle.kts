@@ -1,9 +1,49 @@
 import org.gradle.api.tasks.Sync
+import org.gradle.api.GradleException
+import java.io.File
 
 plugins {
     id("com.android.application")
     id("com.chaquo.python")
     id("org.jetbrains.kotlin.android")
+}
+
+data class ReleaseSigningEnv(
+    val keystoreFile: File,
+    val storePassword: String,
+    val keyAlias: String,
+    val keyPassword: String,
+)
+
+fun requiredEnv(name: String): String {
+    return System.getenv(name)?.takeIf { it.isNotBlank() }
+        ?: throw GradleException("Missing required environment variable: $name")
+}
+
+fun loadReleaseSigningEnv(releaseSigningRequested: Boolean): ReleaseSigningEnv? {
+    val keystorePath = System.getenv("ANDROID_KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
+    val anySigningEnvProvided = listOf(
+        keystorePath,
+        System.getenv("ANDROID_KEYSTORE_PASSWORD"),
+        System.getenv("ANDROID_KEY_ALIAS"),
+        System.getenv("ANDROID_KEY_PASSWORD"),
+    ).any { !it.isNullOrBlank() }
+
+    if (!releaseSigningRequested && !anySigningEnvProvided) {
+        return null
+    }
+
+    val keystoreFile = File(requiredEnv("ANDROID_KEYSTORE_FILE"))
+    if (!keystoreFile.isFile) {
+        throw GradleException("ANDROID_KEYSTORE_FILE does not exist: ${keystoreFile.absolutePath}")
+    }
+
+    return ReleaseSigningEnv(
+        keystoreFile = keystoreFile,
+        storePassword = requiredEnv("ANDROID_KEYSTORE_PASSWORD"),
+        keyAlias = requiredEnv("ANDROID_KEY_ALIAS"),
+        keyPassword = requiredEnv("ANDROID_KEY_PASSWORD"),
+    )
 }
 
 val stagedPythonSourcesDir = layout.buildDirectory.dir("generated/chaquopy/python")
@@ -13,6 +53,10 @@ val stagePythonSources by tasks.registering(Sync::class) {
     }
     into(stagedPythonSourcesDir)
 }
+val releaseSigningRequested = gradle.startParameter.taskNames.any {
+    it.contains("release", ignoreCase = true)
+}
+val releaseSigningEnv = loadReleaseSigningEnv(releaseSigningRequested)
 
 android {
     namespace = "org.flowseal.tgwsproxy"
@@ -32,6 +76,17 @@ android {
         }
     }
 
+    signingConfigs {
+        if (releaseSigningEnv != null) {
+            create("release") {
+                storeFile = releaseSigningEnv.keystoreFile
+                storePassword = releaseSigningEnv.storePassword
+                keyAlias = releaseSigningEnv.keyAlias
+                keyPassword = releaseSigningEnv.keyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -39,6 +94,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            if (releaseSigningEnv != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
