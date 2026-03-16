@@ -13,6 +13,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.snackbar.Snackbar
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import org.flowseal.tgwsproxy.databinding.ActivityMainBinding
 
@@ -89,27 +90,63 @@ class MainActivity : AppCompatActivity() {
     private fun observeServiceState() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                ProxyServiceState.isRunning.collect { isRunning ->
+                combine(
+                    ProxyServiceState.isStarting,
+                    ProxyServiceState.isRunning,
+                ) { isStarting, isRunning ->
+                    isStarting to isRunning
+                }.collect { (isStarting, isRunning) ->
                     binding.statusValue.text = getString(
-                        if (isRunning) R.string.status_running else R.string.status_stopped,
+                        when {
+                            isStarting -> R.string.status_starting
+                            isRunning -> R.string.status_running
+                            else -> R.string.status_stopped
+                        },
                     )
-                    binding.startButton.isEnabled = !isRunning
-                    binding.stopButton.isEnabled = isRunning
+                    binding.startButton.isEnabled = !isStarting && !isRunning
+                    binding.stopButton.isEnabled = isStarting || isRunning
                 }
             }
         }
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                ProxyServiceState.activeConfig.collect { config ->
+                combine(
+                    ProxyServiceState.activeConfig,
+                    ProxyServiceState.isStarting,
+                ) { config, isStarting ->
+                    config to isStarting
+                }.collect { (config, isStarting) ->
                     binding.serviceHint.text = if (config == null) {
                         getString(R.string.service_hint_idle)
+                    } else if (isStarting) {
+                        getString(
+                            R.string.service_hint_starting,
+                            config.host,
+                            config.port,
+                        )
                     } else {
                         getString(
                             R.string.service_hint_running,
                             config.host,
                             config.port,
                         )
+                    }
+                }
+            }
+        }
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                ProxyServiceState.lastError.collect { error ->
+                    if (error.isNullOrBlank()) {
+                        if (!binding.errorText.isVisible) {
+                            return@collect
+                        }
+                        binding.errorText.isVisible = false
+                    } else {
+                        binding.errorText.text = error
+                        binding.errorText.isVisible = true
                     }
                 }
             }

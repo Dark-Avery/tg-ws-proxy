@@ -80,11 +80,20 @@ class ProxyAppRuntime:
         root = logging.getLogger()
         root.setLevel(logging.DEBUG if verbose else logging.INFO)
 
+        for handler in list(root.handlers):
+            if getattr(handler, "_tg_ws_proxy_runtime_handler", False):
+                root.removeHandler(handler)
+                try:
+                    handler.close()
+                except Exception:
+                    pass
+
         fh = logging.FileHandler(str(self.log_file), encoding="utf-8")
         fh.setLevel(logging.DEBUG)
         fh.setFormatter(logging.Formatter(
             "%(asctime)s  %(levelname)-5s  %(name)s  %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S"))
+        fh._tg_ws_proxy_runtime_handler = True
         root.addHandler(fh)
 
         if not getattr(sys, "frozen", False):
@@ -93,6 +102,7 @@ class ProxyAppRuntime:
             ch.setFormatter(logging.Formatter(
                 "%(asctime)s  %(levelname)-5s  %(message)s",
                 datefmt="%H:%M:%S"))
+            ch._tg_ws_proxy_runtime_handler = True
             root.addHandler(ch)
 
     def prepare(self) -> dict:
@@ -168,3 +178,6 @@ class ProxyAppRuntime:
         self.stop_proxy()
         time.sleep(delay_seconds)
         return self.start_proxy()
+
+    def is_proxy_running(self) -> bool:
+        return bool(self._proxy_thread and self._proxy_thread.is_alive())

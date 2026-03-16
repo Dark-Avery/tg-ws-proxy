@@ -19,6 +19,7 @@ build/
 .gradle/
 .gradle-local/
 android/.gradle-local/
+android/.m2-chaquopy*/
 local.properties
 android/.idea/
 android/build/

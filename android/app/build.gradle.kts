@@ -1,6 +1,17 @@
+import org.gradle.api.tasks.Sync
+
 plugins {
     id("com.android.application")
+    id("com.chaquo.python")
     id("org.jetbrains.kotlin.android")
+}
+
+val stagedPythonSourcesDir = layout.buildDirectory.dir("generated/chaquopy/python")
+val stagePythonSources by tasks.registering(Sync::class) {
+    from(rootProject.projectDir.resolve("../proxy")) {
+        into("proxy")
+    }
+    into(stagedPythonSourcesDir)
 }
 
 android {
@@ -15,6 +26,10 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     buildTypes {
@@ -38,6 +53,18 @@ android {
 
     buildFeatures {
         viewBinding = true
+    }
+}
+
+chaquopy {
+    defaultConfig {
+        version = "3.12"
+    }
+    sourceSets {
+        getByName("main") {
+            srcDir("src/main/python")
+            srcDir(stagePythonSources)
+        }
     }
 }
 
