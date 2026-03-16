@@ -83,7 +83,7 @@ class ProxyForegroundService : Service() {
             .setStyle(
                 NotificationCompat.BigTextStyle().bigText(payload.detailsText),
             )
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setSmallIcon(R.drawable.ic_proxy_notification)
             .setContentIntent(createOpenAppPendingIntent())
             .addAction(
                 0,
