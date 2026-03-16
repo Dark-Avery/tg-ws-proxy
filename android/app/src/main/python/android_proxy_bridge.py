@@ -1,10 +1,12 @@
 import os
 import threading
 import time
+import json
 from pathlib import Path
 from typing import Iterable, Optional
 
 from proxy.app_runtime import ProxyAppRuntime
+import proxy.tg_ws_proxy as tg_ws_proxy
 
 
 _RUNTIME_LOCK = threading.RLock()
@@ -49,6 +51,7 @@ def start_proxy(app_dir: str, host: str, port: int,
 
         _LAST_ERROR = None
         os.environ["TG_WS_PROXY_CRYPTO_BACKEND"] = "python"
+        tg_ws_proxy.reset_stats()
 
         runtime = ProxyAppRuntime(
             Path(app_dir),
@@ -107,3 +110,12 @@ def is_running() -> bool:
 
 def get_last_error() -> Optional[str]:
     return _LAST_ERROR
+
+
+def get_runtime_stats_json() -> str:
+    with _RUNTIME_LOCK:
+        running = bool(_RUNTIME and _RUNTIME.is_proxy_running())
+
+    payload = dict(tg_ws_proxy.get_stats_snapshot())
+    payload["running"] = running
+    return json.dumps(payload)

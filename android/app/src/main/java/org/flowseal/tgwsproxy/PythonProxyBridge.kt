@@ -4,6 +4,7 @@ import android.content.Context
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import java.io.File
+import org.json.JSONObject
 
 object PythonProxyBridge {
     private const val MODULE_NAME = "android_proxy_bridge"
@@ -27,6 +28,20 @@ object PythonProxyBridge {
         getModule(context).callAttr("stop_proxy")
     }
 
+    fun getTrafficStats(context: Context): ProxyTrafficStats {
+        if (!Python.isStarted()) {
+            return ProxyTrafficStats()
+        }
+
+        val payload = getModule(context).callAttr("get_runtime_stats_json").toString()
+        val json = JSONObject(payload)
+        return ProxyTrafficStats(
+            bytesUp = json.optLong("bytes_up", 0L),
+            bytesDown = json.optLong("bytes_down", 0L),
+            running = json.optBoolean("running", false),
+        )
+    }
+
     private fun getModule(context: Context) =
         getPython(context.applicationContext).getModule(MODULE_NAME)
 
@@ -37,3 +52,9 @@ object PythonProxyBridge {
         return Python.getInstance()
     }
 }
+
+data class ProxyTrafficStats(
+    val bytesUp: Long = 0L,
+    val bytesDown: Long = 0L,
+    val running: Boolean = false,
+)

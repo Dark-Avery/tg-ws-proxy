@@ -492,6 +492,21 @@ class Stats:
 _stats = Stats()
 
 
+def reset_stats() -> None:
+    global _stats
+    _stats = Stats()
+
+
+def get_stats_snapshot() -> Dict[str, int]:
+    return {
+        "bytes_up": _stats.bytes_up,
+        "bytes_down": _stats.bytes_down,
+        "connections_total": _stats.connections_total,
+        "connections_ws": _stats.connections_ws,
+        "connections_tcp_fallback": _stats.connections_tcp_fallback,
+    }
+
+
 class _WsPool:
     def __init__(self):
         self._idle: Dict[Tuple[int, bool], list] = {}

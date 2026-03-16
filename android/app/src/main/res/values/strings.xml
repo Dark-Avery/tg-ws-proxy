@@ -36,9 +36,7 @@
     <string name="notification_starting">SOCKS5 %1$s:%2$d • starting embedded Python</string>
     <string name="notification_running">SOCKS5 %1$s:%2$d • proxy active</string>
     <string name="notification_endpoint">%1$s:%2$d</string>
-    <string name="notification_details">SOCKS5 endpoint: %1$s:%2$d\nDC mappings: %3$d\nVerbose logging: %4$s\nTap to open the app, or stop the service from this notification.</string>
-    <string name="notification_verbose_on">enabled</string>
-    <string name="notification_verbose_off">disabled</string>
+    <string name="notification_details">DC mappings: %1$d\nTraffic: ↑ %2$s/s ↓ %3$s/s\nTransferred: ↑ %4$s ↓ %5$s</string>
     <string name="notification_action_stop">Stop</string>
     <string name="saved_config_invalid">Saved proxy settings are invalid.</string>
     <string name="proxy_start_failed_generic">Failed to start embedded Python proxy.</string>
