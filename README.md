@@ -10,9 +10,11 @@
 
 # TG WS Proxy
 
-Локальный SOCKS5-прокси для Telegram Desktop, который перенаправляет трафик через WebSocket-соединения к указанным серверам, помогая частично ускорить работу Telegram.  
+Локальный SOCKS5-прокси для Telegram Desktop и Android, который перенаправляет трафик через WebSocket-соединения к указанным серверам, помогая частично ускорить работу Telegram.
   
 **Ожидаемый результат аналогичен прокидыванию hosts для Web Telegram**: ускорение загрузки и скачивания файлов, загрузки сообщений и части медиа.
+
+Этот репозиторий развивает Android-ветку проекта и является форком оригинального TG WS Proxy: [Flowseal/tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy).
 
 <img width="529" height="487" alt="image" src="https://github.com/user-attachments/assets/6a4cf683-0df8-43af-86c1-0e8f08682b62" />
 
@@ -31,7 +33,7 @@ Telegram Desktop → SOCKS5 (127.0.0.1:1080) → TG WS Proxy → WSS (kws*.web.t
 ## 🚀 Быстрый старт
 
 ### Windows
-Перейдите на [страницу релизов](https://github.com/Flowseal/tg-ws-proxy/releases) и скачайте **`TgWsProxy.exe`**. Он собирается автоматически через [Github Actions](https://github.com/Flowseal/tg-ws-proxy/actions) из открытого исходного кода.
+Перейдите на [страницу релизов](https://github.com/Dark-Avery/tg-ws-proxy/releases) и скачайте **`TgWsProxy.exe`**. Он собирается автоматически через [GitHub Actions](https://github.com/Dark-Avery/tg-ws-proxy/actions) из открытого исходного кода.
 
 При первом запуске откроется окно с инструкцией по подключению Telegram Desktop. Приложение сворачивается в системный трей.
 
@@ -41,6 +43,29 @@ Telegram Desktop → SOCKS5 (127.0.0.1:1080) → TG WS Proxy → WSS (kws*.web.t
 - **Настройки...** — GUI-редактор конфигурации
 - **Открыть логи** — открыть файл логов
 - **Выход** — остановить прокси и закрыть приложение
+
+### Android
+Перейдите на [страницу релизов](https://github.com/Dark-Avery/tg-ws-proxy/releases) и скачайте подписанный APK вида **`tg-ws-proxy-android-v1.2.3.apk`**.
+
+После установки:
+- откройте приложение
+- проверьте `Android background limits`
+- при необходимости отключите battery optimization и снимите background restrictions
+- нажмите **Start Service**
+- нажмите **Open in Telegram**
+
+
+Что уже есть в Android-версии:
+- foreground service
+- встроенный Python runtime
+- кнопка **Open in Telegram** через `tg://socks`
+- статус ограничений Android
+- уведомление с кнопкой остановки и статистикой трафика
+
+Что важно для стабильной работы на Android:
+- разрешите уведомления
+- отключите battery optimization для приложения
+
 
 ## Установка из исходников
 
@@ -58,6 +83,44 @@ python windows.py
 
 ```bash
 python proxy/tg_ws_proxy.py [--port PORT] [--dc-ip DC:IP ...] [-v]
+```
+
+### Android debug APK
+
+Требуются JDK 17, Android SDK и Gradle. Локальная debug-сборка:
+
+```bash
+./android/build-local-debug.sh
+```
+
+Результат:
+
+```text
+android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+### Android signed release APK
+
+Для локальной release-сборки нужен keystore и переменные окружения:
+
+```bash
+export ANDROID_KEYSTORE_FILE=/path/to/tg-ws-proxy-release.keystore
+export ANDROID_KEYSTORE_PASSWORD=...
+export ANDROID_KEY_ALIAS=tg-ws-proxy
+export ANDROID_KEY_PASSWORD=...
+```
+
+Сборка:
+
+```bash
+cd android
+./gradlew assembleRelease
+```
+
+Результат:
+
+```text
+android/app/build/outputs/apk/release/app-release.apk
 ```
 
 **Аргументы:**
@@ -96,6 +159,25 @@ python proxy/tg_ws_proxy.py -v
    - **Порт:** `1080`
    - **Логин/Пароль:** оставить пустыми
 
+## Настройка Telegram Android
+
+### Автоматически
+
+В приложении нажмите **Open in Telegram** после запуска foreground service.
+
+### Вручную
+
+1. Telegram → **Настройки** → **Данные и память** → **Настройки прокси**
+2. Добавить прокси:
+   - **Тип:** SOCKS5
+   - **Сервер:** `127.0.0.1`
+   - **Порт:** `1080`
+   - **Логин/Пароль:** оставить пустыми
+
+Важно:
+- сначала должен быть запущен foreground service
+- если Telegram был уже открыт, иногда проще закрыть и открыть его заново после запуска прокси
+
 ## Конфигурация
 
 Tray-приложение хранит данные в `%APPDATA%/TgWsProxy`:
@@ -111,9 +193,24 @@ Tray-приложение хранит данные в `%APPDATA%/TgWsProxy`:
 }
 ```
 
+Android хранит рабочие файлы в приватной директории приложения. Основные параметры редактируются через UI приложения.
+
 ## Автоматическая сборка
 
 Проект содержит спецификацию PyInstaller ([`windows.spec`](packaging/windows.spec)) и GitHub Actions workflow ([`.github/workflows/build.yml`](.github/workflows/build.yml)) для автоматической сборки.
+
+Windows-артефакты:
+- `TgWsProxy.exe`
+- `TgWsProxy-win7.exe`
+
+Android-артефакт:
+- `tg-ws-proxy-android-vX.Y.Z.apk`
+
+Для signed Android release в GitHub Actions нужны secrets:
+- `ANDROID_KEYSTORE_BASE64`
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
 
 ```bash
 pip install pyinstaller
