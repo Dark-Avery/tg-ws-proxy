@@ -3,9 +3,14 @@ name: Build & Release
 on:
   workflow_dispatch:
     inputs:
+      make_release:
+        description: 'Create Github Release?'
+        type: boolean
+        required: true
+        default: false
       version:
         description: "Release version tag (e.g. v1.0.0)"
-        required: true
+        required: false
         default: "v1.0.0"
 
 permissions:
@@ -28,7 +33,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Install pyinstaller
-        run: pip install pyinstaller
+        run: pip install "pyinstaller==6.13.0"
 
       - name: Build EXE with PyInstaller
         run: pyinstaller packaging/windows.spec --noconfirm
@@ -178,6 +183,7 @@ jobs:
   release:
     needs: [build, build-win7, build-android, build-relay]
     runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.make_release == 'true' }}
     steps:
       - name: Download main build
         uses: actions/download-artifact@v4
