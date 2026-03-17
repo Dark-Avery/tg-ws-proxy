@@ -29,6 +29,7 @@ android/*.jks
 android/*.keystore.properties
 relay/relay
 relay/tg-ws-proxy-relay
+relay/dist/
 
 # OS
 Thumbs.db
