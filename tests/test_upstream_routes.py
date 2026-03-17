@@ -1,10 +1,12 @@
 import unittest
 import asyncio
 import json
+from unittest.mock import patch
 
 from proxy.tg_ws_proxy import (
     _DirectTelegramWsRoute,
     _get_last_good_route,
+    _LAST_GOOD_ROUTE_TTL,
     _try_upstream_routes,
     _format_exception_for_log,
     _build_relay_handshake,
@@ -17,7 +19,6 @@ from proxy.tg_ws_proxy import (
     _set_last_good_route,
     reset_route_fail_states,
 )
-from unittest.mock import patch
 
 
 class UpstreamRouteTests(unittest.TestCase):
@@ -137,6 +138,28 @@ class UpstreamRouteTests(unittest.TestCase):
             "wss://relay.example.com/connect", "secret")
 
         routes = _reorder_routes_by_last_good([direct, relay], 2, False)
+
+        self.assertEqual([route.route_name for route in routes],
+                         ["telegram_ws_direct", "relay_ws"])
+
+    def test_last_good_route_expires_after_ttl(self):
+        with patch("proxy.tg_ws_proxy.time.monotonic",
+                   side_effect=[100.0, 100.0 + _LAST_GOOD_ROUTE_TTL + 1.0]):
+            _set_last_good_route(2, False, "relay_ws")
+            preferred = _get_last_good_route(2, False)
+
+        self.assertIsNone(preferred)
+
+    def test_auto_mode_returns_to_direct_after_last_good_ttl(self):
+        direct = _DirectTelegramWsRoute(2, False, "149.154.167.220")
+        relay = _RelayWsRoute(
+            2, False, "149.154.167.220",
+            "wss://relay.example.com/connect", "secret")
+
+        with patch("proxy.tg_ws_proxy.time.monotonic",
+                   side_effect=[100.0, 100.0 + _LAST_GOOD_ROUTE_TTL + 1.0]):
+            _set_last_good_route(2, False, "relay_ws")
+            routes = _reorder_routes_by_last_good([direct, relay], 2, False)
 
         self.assertEqual([route.route_name for route in routes],
                          ["telegram_ws_direct", "relay_ws"])

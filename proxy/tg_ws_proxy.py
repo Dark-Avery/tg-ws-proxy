@@ -87,7 +87,8 @@ _dc_fail_until: Dict[_RouteStateKey, float] = {}
 _DC_FAIL_COOLDOWN = 60.0  # seconds
 
 # Last successful route per (dc, is_media)
-_last_good_routes: Dict[_RoutePreferenceKey, str] = {}
+_last_good_routes: Dict[_RoutePreferenceKey, Tuple[str, float]] = {}
+_LAST_GOOD_ROUTE_TTL = 30.0  # seconds
 
 
 _ssl_ctx = ssl.create_default_context()
@@ -557,12 +558,20 @@ def _route_preference_key(dc: int, is_media: Optional[bool]) -> _RoutePreference
 
 
 def _get_last_good_route(dc: int, is_media: Optional[bool]) -> Optional[str]:
-    return _last_good_routes.get(_route_preference_key(dc, is_media))
+    data = _last_good_routes.get(_route_preference_key(dc, is_media))
+    if not data:
+        return None
+    route_name, saved_at = data
+    if time.monotonic() - saved_at > _LAST_GOOD_ROUTE_TTL:
+        _last_good_routes.pop(_route_preference_key(dc, is_media), None)
+        return None
+    return route_name
 
 
 def _set_last_good_route(dc: int, is_media: Optional[bool],
                          route_name: str) -> None:
-    _last_good_routes[_route_preference_key(dc, is_media)] = route_name
+    _last_good_routes[_route_preference_key(dc, is_media)] = (
+        route_name, time.monotonic())
 
 
 def _reorder_routes_by_last_good(routes: List['_UpstreamRoute'],
@@ -571,6 +580,8 @@ def _reorder_routes_by_last_good(routes: List['_UpstreamRoute'],
                                  ) -> List['_UpstreamRoute']:
     preferred = _get_last_good_route(dc, is_media)
     if not preferred:
+        return routes
+    if preferred == 'telegram_ws_direct':
         return routes
     matching = [route for route in routes if route.route_name == preferred]
     if not matching:
