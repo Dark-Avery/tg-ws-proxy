@@ -181,8 +181,10 @@ class ProxyForegroundService : Service() {
         statusText: String,
     ): NotificationPayload {
         val endpointText = getString(R.string.notification_endpoint, config.host, config.port)
+        val upstreamSummary = UpstreamMode.summary(this, config.upstreamMode, config.relayUrl)
         val detailsText = getString(
             R.string.notification_details,
+            upstreamSummary,
             config.dcIpList.size,
             formatRate(trafficState.upBytesPerSecond),
             formatRate(trafficState.downBytesPerSecond),

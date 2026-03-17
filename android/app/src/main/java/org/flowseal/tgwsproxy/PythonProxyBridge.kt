@@ -17,6 +17,9 @@ object PythonProxyBridge {
             config.host,
             config.port,
             config.dcIpList,
+            config.upstreamMode,
+            config.relayUrl,
+            config.relayToken,
             config.verbose,
         ).toString()
     }

@@ -52,6 +52,21 @@ prefetch_artifact() {
   local destination="$LOCAL_CHAQUOPY_REPO/$relative_path"
 
   if [[ -f "$destination" ]]; then
+    case "$destination" in
+      *.jar|*.zip)
+        if unzip -tqq "$destination" >/dev/null 2>&1; then
+          return 0
+        fi
+        echo "Cached artifact is corrupt, re-fetching $relative_path"
+        mv "$destination" "${destination}.corrupt.$(date +%s)"
+        ;;
+      *)
+        return 0
+        ;;
+    esac
+  fi
+
+  if [[ -f "$destination" ]]; then
     return 0
   fi
 

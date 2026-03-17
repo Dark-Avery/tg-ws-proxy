@@ -73,6 +73,58 @@ class AndroidProxyBridgeTests(unittest.TestCase):
             "4:149.154.167.220",
         ])
 
+    def test_start_proxy_saves_relay_runtime_config(self):
+        captured = {}
+
+        class FakeRuntime:
+            def __init__(self, *args, **kwargs):
+                captured["runtime_init"] = kwargs
+                self.log_file = Path("/tmp/proxy.log")
+
+            def reset_log_file(self):
+                captured["reset_log_file"] = True
+
+            def setup_logging(self, verbose=False):
+                captured["verbose"] = verbose
+
+            def save_config(self, config):
+                captured["config"] = dict(config)
+
+            def start_proxy(self, config):
+                captured["start_proxy"] = dict(config)
+                return True
+
+            def is_proxy_running(self):
+                return True
+
+            def stop_proxy(self):
+                captured["stop_proxy"] = True
+
+        original_runtime = android_proxy_bridge.ProxyAppRuntime
+        try:
+            android_proxy_bridge.ProxyAppRuntime = FakeRuntime
+            log_path = android_proxy_bridge.start_proxy(
+                "/tmp/app",
+                "127.0.0.1",
+                1080,
+                ["2:149.154.167.220"],
+                "auto",
+                "wss://relay.example.com/connect",
+                "secret",
+                True,
+            )
+        finally:
+            android_proxy_bridge.ProxyAppRuntime = original_runtime
+
+        self.assertEqual(log_path, "/tmp/proxy.log")
+        self.assertEqual(captured["config"]["upstream_mode"], "auto")
+        self.assertEqual(
+            captured["config"]["relay_url"],
+            "wss://relay.example.com/connect",
+        )
+        self.assertEqual(captured["config"]["relay_token"], "secret")
+        self.assertTrue(captured["verbose"])
+
 
 if __name__ == "__main__":
     unittest.main()
