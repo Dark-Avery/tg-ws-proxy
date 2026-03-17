@@ -27,6 +27,8 @@ android/app/build/
 android/*.jks
 *.keystore
 android/*.keystore.properties
+relay/relay
+relay/tg-ws-proxy-relay
 
 # OS
 Thumbs.db
