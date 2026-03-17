@@ -40,6 +40,39 @@ jobs:
           path: |
             dist/TgWsProxy.exe
 
+  build-relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: relay/go.mod
+          cache-dependency-path: relay/go.sum
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: |
+          env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+            sdkmanager "ndk;26.3.11579264"
+
+      - name: Build relay binaries
+        working-directory: relay
+        run: |
+          chmod +x build-release.sh
+          ./build-release.sh
+
+      - name: Upload relay artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tg-ws-relay-binaries
+          path: relay/dist/*
+
   build-android:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -143,7 +176,7 @@ jobs:
           path: dist/TgWsProxy-win7.exe
 
   release:
-    needs: [build, build-win7, build-android]
+    needs: [build, build-win7, build-android, build-relay]
     runs-on: ubuntu-latest
     steps:
       - name: Download main build
@@ -164,6 +197,12 @@ jobs:
           name: TgWsProxy-android-release
           path: dist
 
+      - name: Download relay build
+        uses: actions/download-artifact@v4
+        with:
+          name: tg-ws-relay-binaries
+          path: dist/relay
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -175,6 +214,7 @@ jobs:
             dist/TgWsProxy.exe
             dist/TgWsProxy-win7.exe
             dist/tg-ws-proxy-android-${{ github.event.inputs.version }}.apk
+            dist/relay/*
           draft: false
           prerelease: false
         env:

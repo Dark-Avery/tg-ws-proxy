@@ -4,6 +4,9 @@ data class ProxyConfig(
     val host: String = DEFAULT_HOST,
     val portText: String = DEFAULT_PORT.toString(),
     val dcIpText: String = DEFAULT_DC_IP_LINES.joinToString("\n"),
+    val upstreamMode: String = UpstreamMode.DIRECT,
+    val relayUrlText: String = "",
+    val relayTokenText: String = "",
     val verbose: Boolean = false,
 ) {
     fun validate(): ValidationResult {
@@ -37,11 +40,25 @@ data class ProxyConfig(
             }
         }
 
+        val upstreamModeValue = UpstreamMode.normalize(upstreamMode)
+        val relayUrlValue = relayUrlText.trim()
+        val relayTokenValue = relayTokenText.trim()
+
+        if (upstreamModeValue == UpstreamMode.RELAY && relayUrlValue.isEmpty()) {
+            return ValidationResult(errorMessage = "Укажите relay URL для режима Relay only.")
+        }
+        if (relayUrlValue.isNotEmpty() && !isRelayUrl(relayUrlValue)) {
+            return ValidationResult(errorMessage = "Relay URL должен быть в формате ws://host/path или wss://host/path.")
+        }
+
         return ValidationResult(
             normalized = NormalizedProxyConfig(
                 host = hostValue,
                 port = portValue,
                 dcIpList = lines,
+                upstreamMode = upstreamModeValue,
+                relayUrl = relayUrlValue,
+                relayToken = relayTokenValue,
                 verbose = verbose,
             )
         )
@@ -68,6 +85,15 @@ data class ProxyConfig(
                     octet.toIntOrNull() in 0..255
             }
         }
+
+        private fun isRelayUrl(value: String): Boolean {
+            return runCatching { java.net.URI(value) }
+                .map { uri ->
+                    (uri.scheme == "ws" || uri.scheme == "wss") &&
+                        !uri.host.isNullOrBlank()
+                }
+                .getOrDefault(false)
+        }
     }
 }
 
@@ -80,5 +106,8 @@ data class NormalizedProxyConfig(
     val host: String,
     val port: Int,
     val dcIpList: List<String>,
+    val upstreamMode: String,
+    val relayUrl: String,
+    val relayToken: String,
     val verbose: Boolean,
 )

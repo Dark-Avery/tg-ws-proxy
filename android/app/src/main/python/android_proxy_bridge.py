@@ -41,7 +41,9 @@ def _normalize_dc_ip_list(dc_ip_list: Iterable[object]) -> list[str]:
 
 
 def start_proxy(app_dir: str, host: str, port: int,
-                dc_ip_list: Iterable[object], verbose: bool = False) -> str:
+                dc_ip_list: Iterable[object], upstream_mode: str = "telegram_ws_direct",
+                relay_url: str = "", relay_token: str = "",
+                verbose: bool = False) -> str:
     global _RUNTIME, _LAST_ERROR
 
     with _RUNTIME_LOCK:
@@ -65,6 +67,9 @@ def start_proxy(app_dir: str, host: str, port: int,
             "host": host,
             "port": int(port),
             "dc_ip": _normalize_dc_ip_list(dc_ip_list),
+            "upstream_mode": str(upstream_mode or "telegram_ws_direct"),
+            "relay_url": str(relay_url or ""),
+            "relay_token": str(relay_token or ""),
             "verbose": bool(verbose),
         }
         runtime.save_config(config)
@@ -117,6 +122,7 @@ def get_runtime_stats_json() -> str:
         running = bool(_RUNTIME and _RUNTIME.is_proxy_running())
 
     payload = dict(tg_ws_proxy.get_stats_snapshot())
+    payload["last_transport_route"] = payload.get("last_transport_route")
     payload["running"] = running
     payload["last_error"] = _LAST_ERROR
     return json.dumps(payload)

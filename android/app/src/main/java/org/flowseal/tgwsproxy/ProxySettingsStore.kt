@@ -13,6 +13,9 @@ class ProxySettingsStore(context: Context) {
                 KEY_DC_IP_TEXT,
                 ProxyConfig.DEFAULT_DC_IP_LINES.joinToString("\n"),
             ).orEmpty(),
+            upstreamMode = preferences.getString(KEY_UPSTREAM_MODE, UpstreamMode.DIRECT).orEmpty(),
+            relayUrlText = preferences.getString(KEY_RELAY_URL, "").orEmpty(),
+            relayTokenText = preferences.getString(KEY_RELAY_TOKEN, "").orEmpty(),
             verbose = preferences.getBoolean(KEY_VERBOSE, false),
         )
     }
@@ -22,6 +25,9 @@ class ProxySettingsStore(context: Context) {
             .putString(KEY_HOST, config.host)
             .putInt(KEY_PORT, config.port)
             .putString(KEY_DC_IP_TEXT, config.dcIpList.joinToString("\n"))
+            .putString(KEY_UPSTREAM_MODE, config.upstreamMode)
+            .putString(KEY_RELAY_URL, config.relayUrl)
+            .putString(KEY_RELAY_TOKEN, config.relayToken)
             .putBoolean(KEY_VERBOSE, config.verbose)
             .apply()
     }
@@ -31,6 +37,9 @@ class ProxySettingsStore(context: Context) {
         private const val KEY_HOST = "host"
         private const val KEY_PORT = "port"
         private const val KEY_DC_IP_TEXT = "dc_ip_text"
+        private const val KEY_UPSTREAM_MODE = "upstream_mode"
+        private const val KEY_RELAY_URL = "relay_url"
+        private const val KEY_RELAY_TOKEN = "relay_token"
         private const val KEY_VERBOSE = "verbose"
     }
 }

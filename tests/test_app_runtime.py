@@ -52,6 +52,11 @@ class ProxyAppRuntimeTests(unittest.TestCase):
             self.assertEqual(cfg["port"], 9050)
             self.assertEqual(cfg["host"], "127.0.0.2")
             self.assertEqual(cfg["dc_ip"], DEFAULT_CONFIG["dc_ip"])
+            self.assertEqual(
+                cfg["upstream_mode"], DEFAULT_CONFIG["upstream_mode"])
+            self.assertEqual(cfg["relay_url"], DEFAULT_CONFIG["relay_url"])
+            self.assertEqual(
+                cfg["relay_token"], DEFAULT_CONFIG["relay_token"])
             self.assertEqual(cfg["verbose"], DEFAULT_CONFIG["verbose"])
 
     def test_invalid_config_file_falls_back_to_defaults(self):
@@ -92,7 +97,10 @@ class ProxyAppRuntimeTests(unittest.TestCase):
             self.assertEqual(
                 thread_holder["thread"].args,
                 (DEFAULT_CONFIG["port"], {2: "149.154.167.220"},
-                 DEFAULT_CONFIG["host"]))
+                 DEFAULT_CONFIG["host"],
+                 DEFAULT_CONFIG["upstream_mode"],
+                 DEFAULT_CONFIG["relay_url"],
+                 DEFAULT_CONFIG["relay_token"]))
 
     def test_start_proxy_reports_bad_config(self):
         with tempfile.TemporaryDirectory() as tmpdir:

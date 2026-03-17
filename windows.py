@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import webbrowser
+from urllib.parse import urlparse
 import pystray
 import pyperclip
 import customtkinter as ctk
@@ -38,6 +39,65 @@ _runtime = ProxyAppRuntime(
 )
 CONFIG_FILE = _runtime.config_file
 LOG_FILE = _runtime.log_file
+UPSTREAM_MODE_DIRECT = "telegram_ws_direct"
+UPSTREAM_MODE_AUTO = "auto"
+UPSTREAM_MODE_RELAY = "relay_ws"
+
+
+def _normalize_upstream_mode(value: Optional[str]) -> str:
+    if value in (UPSTREAM_MODE_DIRECT, UPSTREAM_MODE_AUTO, UPSTREAM_MODE_RELAY):
+        return value
+    return UPSTREAM_MODE_DIRECT
+
+
+def _relay_host(relay_url: Optional[str]) -> Optional[str]:
+    if not relay_url:
+        return None
+    try:
+        host = urlparse(relay_url.strip()).hostname
+    except Exception:
+        return None
+    if host:
+        return host
+    return None
+
+
+def _upstream_mode_label(value: Optional[str]) -> str:
+    normalized = _normalize_upstream_mode(value)
+    if normalized == UPSTREAM_MODE_AUTO:
+        return "Auto: direct -> relay -> TCP"
+    if normalized == UPSTREAM_MODE_RELAY:
+        return "Relay only"
+    return "Direct Telegram WS"
+
+
+def _upstream_mode_summary(value: Optional[str],
+                           relay_url: Optional[str] = None) -> str:
+    normalized = _normalize_upstream_mode(value)
+    relay_host = _relay_host(relay_url)
+    if normalized == UPSTREAM_MODE_AUTO:
+        if relay_host:
+            return (
+                "Сначала direct Telegram WS, затем relay "
+                f"{relay_host}, затем direct TCP fallback."
+            )
+        return (
+            "Сначала direct Telegram WS. Укажите relay URL, "
+            "чтобы добавить relay fallback перед direct TCP."
+        )
+    if normalized == UPSTREAM_MODE_RELAY:
+        if relay_host:
+            return f"Сначала relay {relay_host}, затем direct TCP fallback."
+        return "Сначала relay, затем direct TCP fallback."
+    return "Используется direct Telegram WS, затем direct TCP fallback."
+
+
+def _validate_relay_url(value: str) -> bool:
+    try:
+        parsed = urlparse(value.strip())
+    except Exception:
+        return False
+    return parsed.scheme in ("ws", "wss") and bool(parsed.hostname)
 
 
 def _same_process(lock_meta: dict, proc: psutil.Process) -> bool:
@@ -234,7 +294,7 @@ def _edit_config_dialog():
     TEXT_SECONDARY = "#707579"
     FONT_FAMILY = "Segoe UI"
 
-    w, h = 420, 480
+    w, h = 460, 700
     sw = root.winfo_screenwidth()
     sh = root.winfo_screenheight()
     root.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
@@ -276,6 +336,92 @@ def _edit_config_dialog():
     dc_textbox.pack(anchor="w", pady=(0, 12))
     dc_textbox.insert("1.0", "\n".join(cfg.get("dc_ip", DEFAULT_CONFIG["dc_ip"])))
 
+    upstream_mode = _normalize_upstream_mode(
+        cfg.get("upstream_mode", DEFAULT_CONFIG["upstream_mode"]))
+    upstream_options = {
+        "Direct Telegram WS": UPSTREAM_MODE_DIRECT,
+        "Auto: direct -> relay -> TCP": UPSTREAM_MODE_AUTO,
+        "Relay only": UPSTREAM_MODE_RELAY,
+    }
+    upstream_option_labels = list(upstream_options.keys())
+    upstream_label_by_value = {
+        value: label for label, value in upstream_options.items()
+    }
+    upstream_var = ctk.StringVar(
+        value=upstream_label_by_value.get(
+            upstream_mode,
+            upstream_option_labels[0],
+        )
+    )
+
+    ctk.CTkLabel(frame, text="Маршрут upstream",
+                 font=(FONT_FAMILY, 13), text_color=TEXT_PRIMARY,
+                 anchor="w").pack(anchor="w", pady=(0, 4))
+    upstream_menu = ctk.CTkOptionMenu(
+        frame,
+        variable=upstream_var,
+        values=upstream_option_labels,
+        width=370,
+        height=36,
+        font=(FONT_FAMILY, 13),
+        corner_radius=10,
+        fg_color=FIELD_BG,
+        button_color=TG_BLUE,
+        button_hover_color=TG_BLUE_HOVER,
+        text_color=TEXT_PRIMARY,
+        dropdown_font=(FONT_FAMILY, 13),
+    )
+    upstream_menu.pack(anchor="w", pady=(0, 8))
+
+    relay_frame = ctk.CTkFrame(frame, fg_color="transparent")
+    relay_frame.pack(fill="x", pady=(0, 8))
+
+    ctk.CTkLabel(relay_frame, text="Relay URL",
+                 font=(FONT_FAMILY, 13), text_color=TEXT_PRIMARY,
+                 anchor="w").pack(anchor="w", pady=(0, 4))
+    relay_url_var = ctk.StringVar(value=cfg.get("relay_url", ""))
+    relay_url_entry = ctk.CTkEntry(
+        relay_frame, textvariable=relay_url_var, width=370, height=36,
+        font=(FONT_FAMILY, 13), corner_radius=10,
+        fg_color=FIELD_BG, border_color=FIELD_BORDER,
+        border_width=1, text_color=TEXT_PRIMARY)
+    relay_url_entry.pack(anchor="w", pady=(0, 10))
+
+    ctk.CTkLabel(relay_frame, text="Relay token",
+                 font=(FONT_FAMILY, 13), text_color=TEXT_PRIMARY,
+                 anchor="w").pack(anchor="w", pady=(0, 4))
+    relay_token_var = ctk.StringVar(value=cfg.get("relay_token", ""))
+    relay_token_entry = ctk.CTkEntry(
+        relay_frame, textvariable=relay_token_var, width=370, height=36,
+        font=(FONT_FAMILY, 13), corner_radius=10,
+        fg_color=FIELD_BG, border_color=FIELD_BORDER,
+        border_width=1, text_color=TEXT_PRIMARY)
+    relay_token_entry.pack(anchor="w", pady=(0, 8))
+
+    upstream_summary_var = ctk.StringVar(
+        value=_upstream_mode_summary(upstream_mode, relay_url_var.get()))
+    upstream_summary_label = ctk.CTkLabel(
+        frame, textvariable=upstream_summary_var,
+        font=(FONT_FAMILY, 11), text_color=TEXT_SECONDARY,
+        anchor="w", justify="left", wraplength=370)
+    upstream_summary_label.pack(anchor="w", pady=(0, 10))
+
+    def update_upstream_controls(*_args):
+        selected_mode = upstream_options.get(
+            upstream_var.get(), UPSTREAM_MODE_DIRECT)
+        relay_needed = selected_mode in (
+            UPSTREAM_MODE_AUTO, UPSTREAM_MODE_RELAY)
+        if relay_needed:
+            relay_frame.pack(fill="x", pady=(0, 8), before=upstream_summary_label)
+        else:
+            relay_frame.pack_forget()
+        upstream_summary_var.set(
+            _upstream_mode_summary(selected_mode, relay_url_var.get()))
+
+    upstream_var.trace_add("write", update_upstream_controls)
+    relay_url_var.trace_add("write", update_upstream_controls)
+    update_upstream_controls()
+
     # Verbose
     verbose_var = ctk.BooleanVar(value=cfg.get("verbose", False))
     ctk.CTkCheckBox(frame, text="Подробное логирование (verbose)",
@@ -315,10 +461,27 @@ def _edit_config_dialog():
             _show_error(str(e))
             return
 
+        upstream_mode_val = upstream_options.get(
+            upstream_var.get(), UPSTREAM_MODE_DIRECT)
+        relay_url_val = relay_url_var.get().strip()
+        relay_token_val = relay_token_var.get().strip()
+        if (upstream_mode_val == UPSTREAM_MODE_RELAY and
+                not relay_url_val):
+            _show_error("Укажите relay URL для режима Relay only.")
+            return
+        if relay_url_val and not _validate_relay_url(relay_url_val):
+            _show_error(
+                "Relay URL должен быть в формате ws://host/path "
+                "или wss://host/path.")
+            return
+
         new_cfg = {
             "host": host_val,
             "port": port_val,
             "dc_ip": lines,
+            "upstream_mode": upstream_mode_val,
+            "relay_url": relay_url_val,
+            "relay_token": relay_token_val,
             "verbose": verbose_var.get(),
         }
         save_config(new_cfg)
@@ -535,11 +698,22 @@ def _build_menu():
         return None
     host = _config.get("host", DEFAULT_CONFIG["host"])
     port = _config.get("port", DEFAULT_CONFIG["port"])
+    upstream_mode = _config.get("upstream_mode", DEFAULT_CONFIG["upstream_mode"])
+    relay_url = _config.get("relay_url", DEFAULT_CONFIG["relay_url"])
     return pystray.Menu(
         pystray.MenuItem(
             f"Открыть в Telegram ({host}:{port})",
             _on_open_in_telegram,
             default=True),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem(
+            f"Маршрут: {_upstream_mode_label(upstream_mode)}",
+            lambda icon, item: None,
+            enabled=False),
+        pystray.MenuItem(
+            _upstream_mode_summary(upstream_mode, relay_url),
+            lambda icon, item: None,
+            enabled=False),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Перезапустить прокси", _on_restart),
         pystray.MenuItem("Настройки...", _on_edit_config),
