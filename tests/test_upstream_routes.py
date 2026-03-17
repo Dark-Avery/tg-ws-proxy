@@ -4,14 +4,17 @@ import json
 
 from proxy.tg_ws_proxy import (
     _DirectTelegramWsRoute,
+    _get_last_good_route,
     _try_upstream_routes,
     _format_exception_for_log,
     _build_relay_handshake,
     _RelayWsRoute,
     _ordered_upstream_routes,
     _parse_relay_url,
+    _reorder_routes_by_last_good,
     _route_cooldown_remaining,
     _set_route_cooldown,
+    _set_last_good_route,
     reset_route_fail_states,
 )
 from unittest.mock import patch
@@ -115,6 +118,29 @@ class UpstreamRouteTests(unittest.TestCase):
         self.assertEqual([route.route_name for route in routes],
                          ["telegram_ws_direct"])
 
+    def test_auto_mode_prefers_last_good_route_when_present(self):
+        _set_last_good_route(2, False, "relay_ws")
+
+        routes = _ordered_upstream_routes(
+            2, False, "149.154.167.220",
+            upstream_mode="auto",
+            relay_url="wss://relay.example.com/connect",
+            relay_token="secret")
+
+        self.assertEqual([route.route_name for route in routes],
+                         ["relay_ws", "telegram_ws_direct"])
+
+    def test_reorder_routes_by_last_good_keeps_order_when_preference_missing(self):
+        direct = _DirectTelegramWsRoute(2, False, "149.154.167.220")
+        relay = _RelayWsRoute(
+            2, False, "149.154.167.220",
+            "wss://relay.example.com/connect", "secret")
+
+        routes = _reorder_routes_by_last_good([direct, relay], 2, False)
+
+        self.assertEqual([route.route_name for route in routes],
+                         ["telegram_ws_direct", "relay_ws"])
+
 
 class RelayRouteAsyncTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -157,10 +183,12 @@ class RelayRouteAsyncTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_try_upstream_routes_uses_second_route_after_first_failure(self):
         class _FakeRoute:
-            def __init__(self, route_name, result):
+            def __init__(self, route_name, result, dc=2, is_media=False):
                 self.route_name = route_name
                 self.result = result
                 self.calls = 0
+                self.dc = dc
+                self.is_media = is_media
 
             async def try_connect(self, label, dst, port):
                 self.calls += 1
@@ -176,18 +204,22 @@ class RelayRouteAsyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(ws, relay_socket)
         self.assertEqual(direct.calls, 1)
         self.assertEqual(relay.calls, 1)
+        self.assertEqual(_get_last_good_route(2, False), "relay_ws")
 
     async def test_try_upstream_routes_returns_none_when_all_routes_fail(self):
         class _FakeRoute:
-            def __init__(self):
+            def __init__(self, route_name):
                 self.calls = 0
+                self.route_name = route_name
+                self.dc = 2
+                self.is_media = False
 
             async def try_connect(self, label, dst, port):
                 self.calls += 1
                 return None
 
-        first = _FakeRoute()
-        second = _FakeRoute()
+        first = _FakeRoute("telegram_ws_direct")
+        second = _FakeRoute("relay_ws")
 
         ws = await _try_upstream_routes(
             [first, second], "test", "149.154.167.41", 443)
@@ -195,6 +227,7 @@ class RelayRouteAsyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(ws)
         self.assertEqual(first.calls, 1)
         self.assertEqual(second.calls, 1)
+        self.assertIsNone(_get_last_good_route(2, False))
 
 
 if __name__ == "__main__":

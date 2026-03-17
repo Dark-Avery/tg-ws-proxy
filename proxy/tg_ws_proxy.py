@@ -72,6 +72,7 @@ _IP_TO_DC: Dict[str, Tuple[int, bool]] = {
 
 _dc_opt: Dict[int, Optional[str]] = {}
 _RouteStateKey = Tuple[str, int, bool]
+_RoutePreferenceKey = Tuple[int, bool]
 _upstream_mode = DEFAULT_UPSTREAM_MODE
 _relay_url: Optional[str] = None
 _relay_token = ''
@@ -84,6 +85,9 @@ _ws_blacklist: Set[_RouteStateKey] = set()
 # Rate-limit re-attempts per (route_name, dc, is_media)
 _dc_fail_until: Dict[_RouteStateKey, float] = {}
 _DC_FAIL_COOLDOWN = 60.0  # seconds
+
+# Last successful route per (dc, is_media)
+_last_good_routes: Dict[_RoutePreferenceKey, str] = {}
 
 
 _ssl_ctx = ssl.create_default_context()
@@ -548,9 +552,38 @@ def _clear_route_cooldown(state_key: _RouteStateKey) -> None:
     _dc_fail_until.pop(state_key, None)
 
 
+def _route_preference_key(dc: int, is_media: Optional[bool]) -> _RoutePreferenceKey:
+    return (dc, is_media if is_media is not None else True)
+
+
+def _get_last_good_route(dc: int, is_media: Optional[bool]) -> Optional[str]:
+    return _last_good_routes.get(_route_preference_key(dc, is_media))
+
+
+def _set_last_good_route(dc: int, is_media: Optional[bool],
+                         route_name: str) -> None:
+    _last_good_routes[_route_preference_key(dc, is_media)] = route_name
+
+
+def _reorder_routes_by_last_good(routes: List['_UpstreamRoute'],
+                                 dc: int,
+                                 is_media: Optional[bool]
+                                 ) -> List['_UpstreamRoute']:
+    preferred = _get_last_good_route(dc, is_media)
+    if not preferred:
+        return routes
+    matching = [route for route in routes if route.route_name == preferred]
+    if not matching:
+        return routes
+    return matching + [
+        route for route in routes if route.route_name != preferred
+    ]
+
+
 def reset_route_fail_states() -> None:
     _ws_blacklist.clear()
     _dc_fail_until.clear()
+    _last_good_routes.clear()
 
 
 class _UpstreamRoute:
@@ -750,7 +783,7 @@ def _ordered_upstream_routes(dc: int, is_media: Optional[bool],
         if relay_url:
             routes.append(_RelayWsRoute(dc, is_media, target_ip,
                                         relay_url, relay_token))
-        return routes
+        return _reorder_routes_by_last_good(routes, dc, is_media)
     if upstream_mode == 'relay_ws':
         if not relay_url:
             return []
@@ -764,6 +797,7 @@ async def _try_upstream_routes(routes: List[_UpstreamRoute], label: str,
     for route in routes:
         ws = await route.try_connect(label, dst, port)
         if ws is not None:
+            _set_last_good_route(route.dc, route.is_media, route.route_name)
             return ws
     return None
 
