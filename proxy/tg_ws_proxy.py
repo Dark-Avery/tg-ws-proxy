@@ -743,12 +743,29 @@ def _ordered_upstream_routes(dc: int, is_media: Optional[bool],
                              relay_token: str = '') -> List[_UpstreamRoute]:
     if target_ip is None:
         return []
+    if upstream_mode == 'auto':
+        routes: List[_UpstreamRoute] = [
+            _DirectTelegramWsRoute(dc, is_media, target_ip),
+        ]
+        if relay_url:
+            routes.append(_RelayWsRoute(dc, is_media, target_ip,
+                                        relay_url, relay_token))
+        return routes
     if upstream_mode == 'relay_ws':
         if not relay_url:
             return []
         return [_RelayWsRoute(dc, is_media, target_ip,
                               relay_url, relay_token)]
     return [_DirectTelegramWsRoute(dc, is_media, target_ip)]
+
+
+async def _try_upstream_routes(routes: List[_UpstreamRoute], label: str,
+                               dst: str, port: int) -> Optional[RawWebSocket]:
+    for route in routes:
+        ws = await route.try_connect(label, dst, port)
+        if ws is not None:
+            return ws
+    return None
 
 
 class Stats:
@@ -1194,10 +1211,7 @@ async def _handle_client(reader, writer):
             upstream_mode=_upstream_mode,
             relay_url=_relay_url,
             relay_token=_relay_token)
-        for route in routes:
-            ws = await route.try_connect(label, dst, port)
-            if ws is not None:
-                break
+        ws = await _try_upstream_routes(routes, label, dst, port)
 
         # -- WS failed -> fallback --
         if ws is None:
@@ -1364,7 +1378,7 @@ def main():
                     help='Target IP for a DC, e.g. --dc-ip 1:149.154.175.205'
                          ' --dc-ip 2:149.154.167.220')
     ap.add_argument('--upstream-mode', type=str,
-                    choices=['telegram_ws_direct', 'relay_ws'],
+                    choices=['telegram_ws_direct', 'relay_ws', 'auto'],
                     default=DEFAULT_UPSTREAM_MODE,
                     help='Upstream route mode')
     ap.add_argument('--relay-url', type=str, default=None,

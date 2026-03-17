@@ -3,6 +3,8 @@ import asyncio
 import json
 
 from proxy.tg_ws_proxy import (
+    _DirectTelegramWsRoute,
+    _try_upstream_routes,
     _format_exception_for_log,
     _build_relay_handshake,
     _RelayWsRoute,
@@ -95,6 +97,24 @@ class UpstreamRouteTests(unittest.TestCase):
                          ["relay_ws"])
         self.assertEqual(routes[0].state_key, ("relay_ws", 2, False))
 
+    def test_orders_direct_then_relay_in_auto_mode(self):
+        routes = _ordered_upstream_routes(
+            2, False, "149.154.167.220",
+            upstream_mode="auto",
+            relay_url="wss://relay.example.com/connect",
+            relay_token="secret")
+
+        self.assertEqual([route.route_name for route in routes],
+                         ["telegram_ws_direct", "relay_ws"])
+
+    def test_orders_only_direct_in_auto_mode_without_relay(self):
+        routes = _ordered_upstream_routes(
+            2, False, "149.154.167.220",
+            upstream_mode="auto")
+
+        self.assertEqual([route.route_name for route in routes],
+                         ["telegram_ws_direct"])
+
 
 class RelayRouteAsyncTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -134,6 +154,47 @@ class RelayRouteAsyncTests(unittest.IsolatedAsyncioTestCase):
         payload = json.loads(fake_ws.sent_text[0])
         self.assertEqual(payload["auth_token"], "secret")
         self.assertEqual(payload["target_ip"], "149.154.167.220")
+
+    async def test_try_upstream_routes_uses_second_route_after_first_failure(self):
+        class _FakeRoute:
+            def __init__(self, route_name, result):
+                self.route_name = route_name
+                self.result = result
+                self.calls = 0
+
+            async def try_connect(self, label, dst, port):
+                self.calls += 1
+                return self.result
+
+        direct = _FakeRoute("telegram_ws_direct", None)
+        relay_socket = object()
+        relay = _FakeRoute("relay_ws", relay_socket)
+
+        ws = await _try_upstream_routes(
+            [direct, relay], "test", "149.154.167.41", 443)
+
+        self.assertIs(ws, relay_socket)
+        self.assertEqual(direct.calls, 1)
+        self.assertEqual(relay.calls, 1)
+
+    async def test_try_upstream_routes_returns_none_when_all_routes_fail(self):
+        class _FakeRoute:
+            def __init__(self):
+                self.calls = 0
+
+            async def try_connect(self, label, dst, port):
+                self.calls += 1
+                return None
+
+        first = _FakeRoute()
+        second = _FakeRoute()
+
+        ws = await _try_upstream_routes(
+            [first, second], "test", "149.154.167.41", 443)
+
+        self.assertIsNone(ws)
+        self.assertEqual(first.calls, 1)
+        self.assertEqual(second.calls, 1)
 
 
 if __name__ == "__main__":
