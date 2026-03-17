@@ -68,14 +68,15 @@ _IP_TO_DC: Dict[str, Tuple[int, bool]] = {
 }
 
 _dc_opt: Dict[int, Optional[str]] = {}
+_RouteStateKey = Tuple[str, int, bool]
 
 # DCs where WS is known to fail (302 redirect)
 # Raw TCP fallback will be used instead
-# Keyed by (dc, is_media)
-_ws_blacklist: Set[Tuple[int, bool]] = set()
+# Keyed by (route_name, dc, is_media)
+_ws_blacklist: Set[_RouteStateKey] = set()
 
-# Rate-limit re-attempts per (dc, is_media)
-_dc_fail_until: Dict[Tuple[int, bool], float] = {}
+# Rate-limit re-attempts per (route_name, dc, is_media)
+_dc_fail_until: Dict[_RouteStateKey, float] = {}
 _DC_FAIL_COOLDOWN = 60.0  # seconds
 
 
@@ -463,6 +464,128 @@ def _ws_domains(dc: int, is_media) -> List[str]:
     if is_media is None or is_media:
         return [f'kws{dc}-1.web.telegram.org', f'kws{dc}.web.telegram.org']
     return [f'kws{dc}.web.telegram.org', f'kws{dc}-1.web.telegram.org']
+
+
+class _UpstreamRoute:
+    route_name = 'upstream'
+
+    def __init__(self, dc: int, is_media: Optional[bool]):
+        self.dc = dc
+        self.is_media = is_media
+
+    @property
+    def media_key(self) -> bool:
+        return self.is_media if self.is_media is not None else True
+
+    @property
+    def media_tag(self) -> str:
+        if self.is_media:
+            return ' media'
+        if self.is_media is None:
+            return ' media?'
+        return ''
+
+    @property
+    def state_key(self) -> _RouteStateKey:
+        return (self.route_name, self.dc, self.media_key)
+
+    async def try_connect(self, label: str, dst: str,
+                          port: int) -> Optional[RawWebSocket]:
+        raise NotImplementedError
+
+
+class _DirectTelegramWsRoute(_UpstreamRoute):
+    route_name = 'telegram_ws_direct'
+
+    def __init__(self, dc: int, is_media: Optional[bool], target_ip: str):
+        super().__init__(dc, is_media)
+        self.target_ip = target_ip
+        self.domains = _ws_domains(dc, is_media)
+
+    async def try_connect(self, label: str, dst: str,
+                          port: int) -> Optional[RawWebSocket]:
+        now = time.monotonic()
+
+        if self.state_key in _ws_blacklist:
+            log.debug("[%s] DC%d%s WS blacklisted -> skip %s:%d",
+                      label, self.dc, self.media_tag, dst, port)
+            return None
+
+        fail_until = _dc_fail_until.get(self.state_key, 0)
+        if now < fail_until:
+            remaining = fail_until - now
+            log.debug("[%s] DC%d%s WS cooldown (%.0fs) -> skip",
+                      label, self.dc, self.media_tag, remaining)
+            return None
+
+        ws = await _ws_pool.get(self.dc, self.media_key, self.target_ip,
+                                self.domains)
+        if ws:
+            log.info("[%s] DC%d%s (%s:%d) -> pool hit via %s",
+                     label, self.dc, self.media_tag, dst, port,
+                     self.target_ip)
+            _dc_fail_until.pop(self.state_key, None)
+            return ws
+
+        ws_failed_redirect = False
+        all_redirects = True
+
+        for domain in self.domains:
+            url = f'wss://{domain}/apiws'
+            log.info("[%s] DC%d%s (%s:%d) -> %s via %s",
+                     label, self.dc, self.media_tag, dst, port,
+                     url, self.target_ip)
+            try:
+                ws = await RawWebSocket.connect(self.target_ip, domain,
+                                                timeout=10)
+                all_redirects = False
+                _dc_fail_until.pop(self.state_key, None)
+                return ws
+            except WsHandshakeError as exc:
+                _stats.ws_errors += 1
+                if exc.is_redirect:
+                    ws_failed_redirect = True
+                    log.warning("[%s] DC%d%s got %d from %s -> %s",
+                                label, self.dc, self.media_tag,
+                                exc.status_code, domain,
+                                exc.location or '?')
+                    continue
+                all_redirects = False
+                log.warning("[%s] DC%d%s WS handshake: %s",
+                            label, self.dc, self.media_tag,
+                            exc.status_line)
+            except Exception as exc:
+                _stats.ws_errors += 1
+                all_redirects = False
+                err_str = str(exc)
+                if ('CERTIFICATE_VERIFY_FAILED' in err_str or
+                        'Hostname mismatch' in err_str):
+                    log.warning("[%s] DC%d%s SSL error: %s",
+                                label, self.dc, self.media_tag, exc)
+                else:
+                    log.warning("[%s] DC%d%s WS connect failed: %s",
+                                label, self.dc, self.media_tag, exc)
+
+        if ws_failed_redirect and all_redirects:
+            _ws_blacklist.add(self.state_key)
+            log.warning("[%s] DC%d%s blacklisted for WS (all 302)",
+                        label, self.dc, self.media_tag)
+        elif ws_failed_redirect:
+            _dc_fail_until[self.state_key] = now + _DC_FAIL_COOLDOWN
+        else:
+            _dc_fail_until[self.state_key] = now + _DC_FAIL_COOLDOWN
+            log.info("[%s] DC%d%s WS cooldown for %ds",
+                     label, self.dc, self.media_tag,
+                     int(_DC_FAIL_COOLDOWN))
+
+        return None
+
+
+def _ordered_upstream_routes(dc: int, is_media: Optional[bool],
+                             target_ip: Optional[str]) -> List[_UpstreamRoute]:
+    if target_ip is None:
+        return []
+    return [_DirectTelegramWsRoute(dc, is_media, target_ip)]
 
 
 class Stats:
@@ -899,95 +1022,17 @@ async def _handle_client(reader, writer):
             await _tcp_fallback(reader, writer, dst, port, init, label)
             return
 
-        dc_key = (dc, is_media if is_media is not None else True)
-        now = time.monotonic()
         media_tag = (" media" if is_media
                      else (" media?" if is_media is None else ""))
-
-        # -- WS blacklist check --
-        if dc_key in _ws_blacklist:
-            log.debug("[%s] DC%d%s WS blacklisted -> TCP %s:%d",
-                      label, dc, media_tag, dst, port)
-            ok = await _tcp_fallback(reader, writer, dst, port, init,
-                                     label, dc=dc, is_media=is_media)
-            if ok:
-                log.info("[%s] DC%d%s TCP fallback closed",
-                         label, dc, media_tag)
-            return
-
-        # -- Cooldown check --
-        fail_until = _dc_fail_until.get(dc_key, 0)
-        if now < fail_until:
-            remaining = fail_until - now
-            log.debug("[%s] DC%d%s WS cooldown (%.0fs) -> TCP",
-                      label, dc, media_tag, remaining)
-            ok = await _tcp_fallback(reader, writer, dst, port, init,
-                                     label, dc=dc, is_media=is_media)
-            if ok:
-                log.info("[%s] DC%d%s TCP fallback closed",
-                         label, dc, media_tag)
-            return
-
-        # -- Try WebSocket via direct connection --
-        domains = _ws_domains(dc, is_media)
-        target = _dc_opt[dc]
         ws = None
-        ws_failed_redirect = False
-        all_redirects = True
-
-        ws = await _ws_pool.get(dc, is_media, target, domains)
-        if ws:
-            log.info("[%s] DC%d%s (%s:%d) -> pool hit via %s",
-                     label, dc, media_tag, dst, port, target)
-        else:
-            for domain in domains:
-                url = f'wss://{domain}/apiws'
-                log.info("[%s] DC%d%s (%s:%d) -> %s via %s",
-                         label, dc, media_tag, dst, port, url, target)
-                try:
-                    ws = await RawWebSocket.connect(target, domain,
-                                                    timeout=10)
-                    all_redirects = False
-                    break
-                except WsHandshakeError as exc:
-                    _stats.ws_errors += 1
-                    if exc.is_redirect:
-                        ws_failed_redirect = True
-                        log.warning("[%s] DC%d%s got %d from %s -> %s",
-                                    label, dc, media_tag,
-                                    exc.status_code, domain,
-                                    exc.location or '?')
-                        continue
-                    else:
-                        all_redirects = False
-                        log.warning("[%s] DC%d%s WS handshake: %s",
-                                    label, dc, media_tag, exc.status_line)
-                except Exception as exc:
-                    _stats.ws_errors += 1
-                    all_redirects = False
-                    err_str = str(exc)
-                    if ('CERTIFICATE_VERIFY_FAILED' in err_str or
-                            'Hostname mismatch' in err_str):
-                        log.warning("[%s] DC%d%s SSL error: %s",
-                                    label, dc, media_tag, exc)
-                    else:
-                        log.warning("[%s] DC%d%s WS connect failed: %s",
-                                    label, dc, media_tag, exc)
+        routes = _ordered_upstream_routes(dc, is_media, _dc_opt.get(dc))
+        for route in routes:
+            ws = await route.try_connect(label, dst, port)
+            if ws is not None:
+                break
 
         # -- WS failed -> fallback --
         if ws is None:
-            if ws_failed_redirect and all_redirects:
-                _ws_blacklist.add(dc_key)
-                log.warning(
-                    "[%s] DC%d%s blacklisted for WS (all 302)",
-                    label, dc, media_tag)
-            elif ws_failed_redirect:
-                _dc_fail_until[dc_key] = now + _DC_FAIL_COOLDOWN
-            else:
-                _dc_fail_until[dc_key] = now + _DC_FAIL_COOLDOWN
-                log.info("[%s] DC%d%s WS cooldown for %ds",
-                         label, dc, media_tag, int(_DC_FAIL_COOLDOWN))
-
             log.info("[%s] DC%d%s -> TCP fallback to %s:%d",
                      label, dc, media_tag, dst, port)
             ok = await _tcp_fallback(reader, writer, dst, port, init,
@@ -998,7 +1043,6 @@ async def _handle_client(reader, writer):
             return
 
         # -- WS success --
-        _dc_fail_until.pop(dc_key, None)
         _stats.connections_ws += 1
 
         splitter = None
@@ -1071,7 +1115,7 @@ async def _run(port: int, dc_opt: Dict[int, Optional[str]],
             await asyncio.sleep(60)
             bl = ', '.join(
                 f'DC{d}{"m" if m else ""}'
-                for d, m in sorted(_ws_blacklist)) or 'none'
+                for _, d, m in sorted(_ws_blacklist)) or 'none'
             log.info("stats: %s | ws_bl: %s", _stats.summary(), bl)
 
     asyncio.create_task(log_stats())
