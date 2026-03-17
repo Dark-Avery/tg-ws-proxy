@@ -45,13 +45,16 @@ class AndroidProxyBridgeTests(unittest.TestCase):
         snapshot = tg_ws_proxy.get_stats_snapshot()
         snapshot["bytes_up"] = 1536
         snapshot["bytes_down"] = 4096
+        snapshot["last_transport_route"] = "relay_ws"
         tg_ws_proxy._stats.bytes_up = snapshot["bytes_up"]
         tg_ws_proxy._stats.bytes_down = snapshot["bytes_down"]
+        tg_ws_proxy._stats.last_transport_route = snapshot["last_transport_route"]
 
         result = json.loads(android_proxy_bridge.get_runtime_stats_json())
 
         self.assertEqual(result["bytes_up"], 1536)
         self.assertEqual(result["bytes_down"], 4096)
+        self.assertEqual(result["last_transport_route"], "relay_ws")
         self.assertFalse(result["running"])
         self.assertIsNone(result["last_error"])
 

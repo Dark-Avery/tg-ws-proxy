@@ -42,6 +42,7 @@ object PythonProxyBridge {
             bytesUp = json.optLong("bytes_up", 0L),
             bytesDown = json.optLong("bytes_down", 0L),
             running = json.optBoolean("running", false),
+            lastTransportRoute = json.optString("last_transport_route").ifBlank { null },
             lastError = json.optString("last_error").ifBlank { null },
         )
     }
@@ -61,5 +62,6 @@ data class ProxyTrafficStats(
     val bytesUp: Long = 0L,
     val bytesDown: Long = 0L,
     val running: Boolean = false,
+    val lastTransportRoute: String? = null,
     val lastError: String? = null,
 )

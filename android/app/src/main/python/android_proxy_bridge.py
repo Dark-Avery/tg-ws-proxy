@@ -122,6 +122,7 @@ def get_runtime_stats_json() -> str:
         running = bool(_RUNTIME and _RUNTIME.is_proxy_running())
 
     payload = dict(tg_ws_proxy.get_stats_snapshot())
+    payload["last_transport_route"] = payload.get("last_transport_route")
     payload["running"] = running
     payload["last_error"] = _LAST_ERROR
     return json.dumps(payload)

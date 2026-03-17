@@ -809,6 +809,7 @@ async def _try_upstream_routes(routes: List[_UpstreamRoute], label: str,
         ws = await route.try_connect(label, dst, port)
         if ws is not None:
             _set_last_good_route(route.dc, route.is_media, route.route_name)
+            _stats.last_transport_route = route.route_name
             return ws
     return None
 
@@ -825,6 +826,7 @@ class Stats:
         self.bytes_down = 0
         self.pool_hits = 0
         self.pool_misses = 0
+        self.last_transport_route = None
 
     def summary(self) -> str:
         return (f"total={self.connections_total} ws={self.connections_ws} "
@@ -845,13 +847,14 @@ def reset_stats() -> None:
     _stats = Stats()
 
 
-def get_stats_snapshot() -> Dict[str, int]:
+def get_stats_snapshot() -> Dict[str, object]:
     return {
         "bytes_up": _stats.bytes_up,
         "bytes_down": _stats.bytes_down,
         "connections_total": _stats.connections_total,
         "connections_ws": _stats.connections_ws,
         "connections_tcp_fallback": _stats.connections_tcp_fallback,
+        "last_transport_route": _stats.last_transport_route,
     }
 
 
@@ -1118,6 +1121,7 @@ async def _tcp_fallback(reader, writer, dst, port, init, label,
         return False
 
     _stats.connections_tcp_fallback += 1
+    _stats.last_transport_route = "tcp_fallback"
     rw.write(init)
     await rw.drain()
     await _bridge_tcp(reader, writer, rr, rw, label,
