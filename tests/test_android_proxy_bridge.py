@@ -1,6 +1,7 @@
 import sys
 import unittest
 import json
+import os
 from pathlib import Path
 
 
@@ -27,6 +28,7 @@ class AndroidProxyBridgeTests(unittest.TestCase):
     def tearDown(self):
         tg_ws_proxy.reset_stats()
         android_proxy_bridge._LAST_ERROR = None
+        os.environ.pop("TG_WS_PROXY_DISABLE_WS_POOL", None)
 
     def test_normalize_dc_ip_list_with_python_iterable(self):
         result = android_proxy_bridge._normalize_dc_ip_list([
@@ -127,6 +129,7 @@ class AndroidProxyBridgeTests(unittest.TestCase):
         )
         self.assertEqual(captured["config"]["relay_token"], "secret")
         self.assertTrue(captured["verbose"])
+        self.assertEqual(os.environ.get("TG_WS_PROXY_DISABLE_WS_POOL"), "1")
 
 
 if __name__ == "__main__":

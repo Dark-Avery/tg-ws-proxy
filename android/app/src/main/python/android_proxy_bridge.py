@@ -53,6 +53,7 @@ def start_proxy(app_dir: str, host: str, port: int,
 
         _LAST_ERROR = None
         os.environ["TG_WS_PROXY_CRYPTO_BACKEND"] = "python"
+        os.environ["TG_WS_PROXY_DISABLE_WS_POOL"] = "1"
         tg_ws_proxy.reset_stats()
 
         runtime = ProxyAppRuntime(

@@ -101,6 +101,11 @@ def _format_exception_for_log(exc: Exception) -> str:
     return f'{type(exc).__name__}: {message}'
 
 
+def _ws_pool_enabled() -> bool:
+    value = os.getenv('TG_WS_PROXY_DISABLE_WS_POOL', '').strip().lower()
+    return value not in ('1', 'true', 'yes', 'on')
+
+
 def _set_sock_opts(transport):
     sock = transport.get_extra_info('socket')
     if sock is None:
@@ -648,14 +653,15 @@ class _DirectTelegramWsRoute(_UpstreamRoute):
                       label, self.dc, self.media_tag, remaining)
             return None
 
-        ws = await _ws_pool.get(self.dc, self.media_key, self.target_ip,
-                                self.domains)
-        if ws:
-            log.info("[%s] DC%d%s (%s:%d) -> pool hit via %s",
-                     label, self.dc, self.media_tag, dst, port,
-                     self.target_ip)
-            _clear_route_cooldown(self.state_key)
-            return ws
+        if _ws_pool_enabled():
+            ws = await _ws_pool.get(self.dc, self.media_key, self.target_ip,
+                                    self.domains)
+            if ws:
+                log.info("[%s] DC%d%s (%s:%d) -> pool hit via %s",
+                         label, self.dc, self.media_tag, dst, port,
+                         self.target_ip)
+                _clear_route_cooldown(self.state_key)
+                return ws
 
         ws_failed_redirect = False
         all_redirects = True
@@ -964,13 +970,16 @@ async def _bridge_ws(reader, writer, ws: RawWebSocket, label,
     up_packets = 0
     down_packets = 0
     start_time = asyncio.get_event_loop().time()
+    tcp_end_reason = 'not-started'
+    ws_end_reason = 'not-started'
 
     async def tcp_to_ws():
-        nonlocal up_bytes, up_packets
+        nonlocal up_bytes, up_packets, tcp_end_reason
         try:
             while True:
                 chunk = await reader.read(65536)
                 if not chunk:
+                    tcp_end_reason = 'tcp-eof'
                     break
                 _stats.bytes_up += len(chunk)
                 up_bytes += len(chunk)
@@ -983,17 +992,23 @@ async def _bridge_ws(reader, writer, ws: RawWebSocket, label,
                         await ws.send(parts[0])
                 else:
                     await ws.send(chunk)
-        except (asyncio.CancelledError, ConnectionError, OSError):
+        except asyncio.CancelledError:
+            tcp_end_reason = 'cancelled'
+            return
+        except (ConnectionError, OSError) as exc:
+            tcp_end_reason = _format_exception_for_log(exc)
             return
         except Exception as e:
+            tcp_end_reason = _format_exception_for_log(e)
             log.debug("[%s] tcp->ws ended: %s", label, e)
 
     async def ws_to_tcp():
-        nonlocal down_bytes, down_packets
+        nonlocal down_bytes, down_packets, ws_end_reason
         try:
             while True:
                 data = await ws.recv()
                 if data is None:
+                    ws_end_reason = 'ws-eof'
                     break
                 _stats.bytes_down += len(data)
                 down_bytes += len(data)
@@ -1003,15 +1018,29 @@ async def _bridge_ws(reader, writer, ws: RawWebSocket, label,
                 buf = writer.transport.get_write_buffer_size()
                 if buf > _SEND_BUF:
                     await writer.drain()
-        except (asyncio.CancelledError, ConnectionError, OSError):
+        except asyncio.CancelledError:
+            ws_end_reason = 'cancelled'
+            return
+        except (ConnectionError, OSError) as exc:
+            ws_end_reason = _format_exception_for_log(exc)
             return
         except Exception as e:
+            ws_end_reason = _format_exception_for_log(e)
             log.debug("[%s] ws->tcp ended: %s", label, e)
 
-    tasks = [asyncio.create_task(tcp_to_ws()),
-             asyncio.create_task(ws_to_tcp())]
+    tcp_task = asyncio.create_task(tcp_to_ws(), name=f'{label}:tcp->ws')
+    ws_task = asyncio.create_task(ws_to_tcp(), name=f'{label}:ws->tcp')
+    tasks = [tcp_task, ws_task]
     try:
-        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        done, pending = await asyncio.wait(
+            tasks, return_when=asyncio.FIRST_COMPLETED)
+        done_names = sorted(task.get_name().split(':', 1)[1] for task in done)
+        pending_names = sorted(
+            task.get_name().split(':', 1)[1] for task in pending)
+        log.debug("[%s] bridge first completed: done=%s pending=%s",
+                  label,
+                  ','.join(done_names) or '-',
+                  ','.join(pending_names) or '-')
     finally:
         for t in tasks:
             t.cancel()
@@ -1022,11 +1051,12 @@ async def _bridge_ws(reader, writer, ws: RawWebSocket, label,
                 pass
         elapsed = asyncio.get_event_loop().time() - start_time
         log.info("[%s] %s (%s) WS session closed: "
-                 "^%s (%d pkts) v%s (%d pkts) in %.1fs",
+                 "^%s (%d pkts) v%s (%d pkts) in %.1fs | "
+                 "tcp->ws=%s ws->tcp=%s",
                  label, dc_tag, dst_tag,
                  _human_bytes(up_bytes), up_packets,
                  _human_bytes(down_bytes), down_packets,
-                 elapsed)
+                 elapsed, tcp_end_reason, ws_end_reason)
         try:
             await ws.close()
         except BaseException:
@@ -1361,7 +1391,10 @@ async def _run(port: int, dc_opt: Dict[int, Optional[str]],
 
     asyncio.create_task(log_stats())
 
-    await _ws_pool.warmup(dc_opt)
+    if _ws_pool_enabled():
+        await _ws_pool.warmup(dc_opt)
+    else:
+        log.info("WS pool disabled for this runtime")
 
     if stop_event:
         async def wait_stop():

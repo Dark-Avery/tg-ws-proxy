@@ -1,6 +1,7 @@
 import unittest
 import asyncio
 import json
+import os
 from unittest.mock import patch
 
 from proxy.tg_ws_proxy import (
@@ -17,6 +18,7 @@ from proxy.tg_ws_proxy import (
     _route_cooldown_remaining,
     _set_route_cooldown,
     _set_last_good_route,
+    _ws_pool_enabled,
     reset_route_fail_states,
 )
 
@@ -77,6 +79,15 @@ class UpstreamRouteTests(unittest.TestCase):
     def test_format_exception_for_log_fills_empty_message(self):
         self.assertEqual(_format_exception_for_log(TimeoutError()),
                          "TimeoutError: (no message)")
+
+    def test_ws_pool_enabled_by_default(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("TG_WS_PROXY_DISABLE_WS_POOL", None)
+            self.assertTrue(_ws_pool_enabled())
+
+    def test_ws_pool_can_be_disabled_via_env(self):
+        with patch.dict(os.environ, {"TG_WS_PROXY_DISABLE_WS_POOL": "1"}, clear=False):
+            self.assertFalse(_ws_pool_enabled())
 
     def test_cooldown_is_kept_separately_per_route_name(self):
         now = 100.0
