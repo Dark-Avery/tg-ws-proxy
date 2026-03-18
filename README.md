@@ -55,11 +55,6 @@ Telegram Desktop → SOCKS5 (127.0.0.1:1080) → TG WS Proxy → WSS → Telegra
 
 ```bash
 pip install -e .
-```
-
-После этого доступна команда:
-
-```bash
 tg-ws-proxy
 ```
 
@@ -67,11 +62,6 @@ tg-ws-proxy
 
 ```bash
 pip install -e ".[win10]"
-```
-
-Запуск tray-приложения:
-
-```bash
 tg-ws-proxy-tray-win
 ```
 
@@ -79,11 +69,6 @@ tg-ws-proxy-tray-win
 
 ```bash
 pip install -e ".[win7]"
-```
-
-Запуск tray-приложения:
-
-```bash
 tg-ws-proxy-tray-win
 ```
 
@@ -91,11 +76,6 @@ tg-ws-proxy-tray-win
 
 ```bash
 pip install -e ".[macos]"
-```
-
-Запуск tray-приложения:
-
-```bash
 tg-ws-proxy-tray-macos
 ```
 
