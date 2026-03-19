@@ -1,1 +1,1 @@
-"""TG WS Proxy core package."""
+__version__ = "1.1.3"
