@@ -60,6 +60,13 @@ prefetch_artifact() {
         echo "Cached artifact is corrupt, re-fetching $relative_path"
         mv "$destination" "${destination}.corrupt.$(date +%s)"
         ;;
+      *.so)
+        if readelf -d "$destination" >/dev/null 2>&1; then
+          return 0
+        fi
+        echo "Cached shared library is corrupt, re-fetching $relative_path"
+        mv "$destination" "${destination}.corrupt.$(date +%s)"
+        ;;
       *)
         return 0
         ;;
