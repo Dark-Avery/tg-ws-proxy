@@ -22,8 +22,8 @@ DEFAULT_UPSTREAM_MODE = 'telegram_ws_direct'
 log = logging.getLogger('tg-ws-proxy')
 
 _TCP_NODELAY = True
-_RECV_BUF = 65536
-_SEND_BUF = 65536
+_RECV_BUF = 256 * 1024
+_SEND_BUF = 256 * 1024
 _WS_POOL_SIZE = 4
 _WS_POOL_MAX_AGE = 120.0
 
@@ -68,6 +68,13 @@ _IP_TO_DC: Dict[str, Tuple[int, bool]] = {
     '149.154.171.5':  (5, False),
     '91.108.56.102': (5, True), '91.108.56.128': (5, True),
     '91.108.56.151': (5, True),
+    # DC203
+    '91.105.192.100': (203, False),
+}
+
+# This case might work but not actually sure
+_DC_OVERRIDES: Dict[int, int] = {
+    203: 2
 }
 
 _dc_opt: Dict[int, Optional[str]] = {}
@@ -84,7 +91,8 @@ _ws_blacklist: Set[_RouteStateKey] = set()
 
 # Rate-limit re-attempts per (route_name, dc, is_media)
 _dc_fail_until: Dict[_RouteStateKey, float] = {}
-_DC_FAIL_COOLDOWN = 60.0  # seconds
+_DC_FAIL_COOLDOWN = 30.0  # seconds to keep reduced WS timeout after failure
+_WS_FAIL_TIMEOUT = 2.0    # quick-retry timeout after a recent WS failure
 
 # Last successful route per (dc, is_media)
 _last_good_routes: Dict[_RoutePreferenceKey, Tuple[str, float]] = {}
@@ -407,7 +415,7 @@ def _dc_from_init(data: bytes) -> Tuple[Optional[int], bool]:
                   proto, dc_raw, plain.hex())
         if proto in (0xEFEFEFEF, 0xEEEEEEEE, 0xDDDDDDDD):
             dc = abs(dc_raw)
-            if 1 <= dc <= 5:
+            if 1 <= dc <= 5 or dc == 203:
                 return dc, (dc_raw < 0)
     except Exception as exc:
         log.debug("DC extraction failed: %s", exc)
@@ -492,6 +500,7 @@ class _MsgSplitter:
 
 
 def _ws_domains(dc: int, is_media) -> List[str]:
+    dc = _DC_OVERRIDES.get(dc, dc)
     if is_media is None or is_media:
         return [f'kws{dc}-1.web.telegram.org', f'kws{dc}.web.telegram.org']
     return [f'kws{dc}.web.telegram.org', f'kws{dc}-1.web.telegram.org']
@@ -643,10 +652,10 @@ class _DirectTelegramWsRoute(_UpstreamRoute):
             return None
 
         remaining = _route_cooldown_remaining(self.state_key, now)
+        ws_timeout = _WS_FAIL_TIMEOUT if remaining > 0 else 10.0
         if remaining > 0:
-            log.debug("[%s] DC%d%s WS cooldown (%.0fs) -> skip",
+            log.debug("[%s] DC%d%s WS cooldown (%.0fs) -> quick retry",
                       label, self.dc, self.media_tag, remaining)
-            return None
 
         ws = await _ws_pool.get(self.dc, self.media_key, self.target_ip,
                                 self.domains)
@@ -667,7 +676,7 @@ class _DirectTelegramWsRoute(_UpstreamRoute):
                      url, self.target_ip)
             try:
                 ws = await RawWebSocket.connect(self.target_ip, domain,
-                                                timeout=10)
+                                                timeout=ws_timeout)
                 all_redirects = False
                 _clear_route_cooldown(self.state_key)
                 return ws
@@ -1423,7 +1432,7 @@ def main():
     ap.add_argument('--host', type=str, default='127.0.0.1',
                     help='Listen host (default 127.0.0.1)')
     ap.add_argument('--dc-ip', metavar='DC:IP', action='append',
-                    default=['2:149.154.167.220', '4:149.154.167.220'],
+                    default=[],
                     help='Target IP for a DC, e.g. --dc-ip 1:149.154.175.205'
                          ' --dc-ip 2:149.154.167.220')
     ap.add_argument('--upstream-mode', type=str,
@@ -1437,6 +1446,9 @@ def main():
     ap.add_argument('-v', '--verbose', action='store_true',
                     help='Debug logging')
     args = ap.parse_args()
+
+    if not args.dc_ip:
+        args.dc_ip = ['2:149.154.167.220', '4:149.154.167.220']
 
     try:
         dc_opt = parse_dc_ip_list(args.dc_ip)

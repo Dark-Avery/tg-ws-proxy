@@ -4,6 +4,7 @@ import ctypes
 import json
 import logging
 import os
+import winreg
 import psutil
 import sys
 import threading
@@ -14,12 +15,16 @@ import pystray
 import pyperclip
 import customtkinter as ctk
 from pathlib import Path
-from typing import Optional
+import asyncio as _asyncio
+from typing import Dict, Optional
+
 from PIL import Image, ImageDraw, ImageFont
 
 import proxy.tg_ws_proxy as tg_ws_proxy
 from proxy.app_runtime import DEFAULT_CONFIG, ProxyAppRuntime
 
+
+IS_FROZEN = bool(getattr(sys, "frozen", False))
 
 APP_NAME = "TgWsProxy"
 APP_DIR = Path(os.environ.get("APPDATA", Path.home())) / APP_NAME
@@ -189,6 +194,64 @@ def setup_logging(verbose: bool = False):
     _runtime.setup_logging(verbose)
 
 
+def _autostart_reg_name() -> str:
+    return APP_NAME
+
+
+def _supports_autostart() -> bool:
+    return IS_FROZEN
+
+
+def _autostart_command() -> str:
+    return f'"{sys.executable}"'
+
+
+def is_autostart_enabled() -> bool:
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            0,
+            winreg.KEY_READ,
+        ) as k:
+            val, _ = winreg.QueryValueEx(k, _autostart_reg_name())
+        stored = str(val).strip()
+        expected = _autostart_command().strip()
+        return stored == expected
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return False
+
+
+def set_autostart_enabled(enabled: bool) -> None:
+    try:
+        with winreg.CreateKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+        ) as k:
+            if enabled:
+                winreg.SetValueEx(
+                    k,
+                    _autostart_reg_name(),
+                    0,
+                    winreg.REG_SZ,
+                    _autostart_command(),
+                )
+            else:
+                try:
+                    winreg.DeleteValue(k, _autostart_reg_name())
+                except FileNotFoundError:
+                    pass
+    except OSError as exc:
+        log.error("Failed to update autostart: %s", exc)
+        _show_error(
+            "Не удалось изменить автозапуск.\n\n"
+            "Попробуйте запустить приложение от имени пользователя с правами на реестр.\n\n"
+            f"Ошибка: {exc}"
+        )
+
+
 def _make_icon_image(size: int = 64):
     if Image is None:
         raise RuntimeError("Pillow is required for tray icon")
@@ -276,6 +339,12 @@ def _edit_config_dialog():
         return
 
     cfg = dict(_config)
+    cfg["autostart"] = is_autostart_enabled()
+
+    # Make sure that the autostart key is removed if autostart 
+    # is disabled, even if the executable file is moved.
+    if _supports_autostart() and not cfg["autostart"]:
+        set_autostart_enabled(False)
 
     ctk.set_appearance_mode("light")
     ctk.set_default_color_theme("blue")
@@ -433,10 +502,18 @@ def _edit_config_dialog():
                     corner_radius=6, border_width=2,
                     border_color=FIELD_BORDER).pack(anchor="w", pady=(0, 8))
 
-    # Info label
-    ctk.CTkLabel(frame, text="Изменения вступят в силу после перезапуска прокси.",
-                 font=(FONT_FAMILY, 11), text_color=TEXT_SECONDARY,
-                 anchor="w").pack(anchor="w", pady=(0, 16))
+    autostart_var = None
+    if _supports_autostart():
+        autostart_var = ctk.BooleanVar(value=cfg["autostart"])
+        ctk.CTkCheckBox(frame, text="Автозапуск при включении Windows",
+                        variable=autostart_var, font=(FONT_FAMILY, 13),
+                        text_color=TEXT_PRIMARY,
+                        fg_color=TG_BLUE, hover_color=TG_BLUE_HOVER,
+                        corner_radius=6, border_width=2,
+                        border_color=FIELD_BORDER).pack(anchor="w", pady=(0, 8))
+        ctk.CTkLabel(frame, text="При перемещении файла или открытии из другой папки\nавтозапуск будет сброшен",
+                 font=(FONT_FAMILY, 13), text_color=TEXT_SECONDARY,
+                 anchor="w", justify="left").pack(anchor="w", pady=(0, 8))
 
     def on_save():
         import socket as _sock
@@ -485,10 +562,14 @@ def _edit_config_dialog():
             "relay_url": relay_url_val,
             "relay_token": relay_token_val,
             "verbose": verbose_var.get(),
+            "autostart": (autostart_var.get() if autostart_var is not None else False),
         }
         save_config(new_cfg)
         _config.update(new_cfg)
         log.info("Config saved: %s", new_cfg)
+
+        if _supports_autostart():
+            set_autostart_enabled(bool(new_cfg.get("autostart", False)))
 
         _tray_icon.menu = _build_menu()
 
@@ -506,18 +587,18 @@ def _edit_config_dialog():
         root.destroy()
 
     btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
-    btn_frame.pack(fill="x")
-    ctk.CTkButton(btn_frame, text="Сохранить", width=140, height=38,
+    btn_frame.pack(fill="x", pady=(20, 0))
+    ctk.CTkButton(btn_frame, text="Сохранить", height=38,
                   font=(FONT_FAMILY, 14, "bold"), corner_radius=10,
                   fg_color=TG_BLUE, hover_color=TG_BLUE_HOVER,
                   text_color="#ffffff",
-                  command=on_save).pack(side="left", padx=(0, 10))
-    ctk.CTkButton(btn_frame, text="Отмена", width=140, height=38,
+                  command=on_save).pack(side="left", fill="x", expand=True, padx=(0, 8))
+    ctk.CTkButton(btn_frame, text="Отмена", height=38,
                   font=(FONT_FAMILY, 14), corner_radius=10,
                   fg_color=FIELD_BG, hover_color=FIELD_BORDER,
                   text_color=TEXT_PRIMARY, border_width=1,
                   border_color=FIELD_BORDER,
-                  command=on_cancel).pack(side="left")
+                  command=on_cancel).pack(side="right", fill="x", expand=True)
 
     root.mainloop()
 
