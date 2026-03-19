@@ -9,9 +9,9 @@ import sys
 import threading
 import time
 import webbrowser
-import asyncio as _asyncio
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
+from urllib.parse import urlparse
 
 try:
     import rumps
@@ -29,30 +29,83 @@ except ImportError:
     pyperclip = None
 
 import proxy.tg_ws_proxy as tg_ws_proxy
+from proxy.app_runtime import DEFAULT_CONFIG, ProxyAppRuntime
 
 APP_NAME = "TgWsProxy"
 APP_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
-CONFIG_FILE = APP_DIR / "config.json"
-LOG_FILE = APP_DIR / "proxy.log"
 FIRST_RUN_MARKER = APP_DIR / ".first_run_done"
 IPV6_WARN_MARKER = APP_DIR / ".ipv6_warned"
 MENUBAR_ICON_PATH = APP_DIR / "menubar_icon.png"
-
-DEFAULT_CONFIG = {
-    "port": 1080,
-    "host": "127.0.0.1",
-    "dc_ip": ["2:149.154.167.220", "4:149.154.167.220"],
-    "verbose": False,
-}
-
-_proxy_thread: Optional[threading.Thread] = None
-_async_stop: Optional[object] = None
 _app: Optional[object] = None
 _config: dict = {}
 _exiting: bool = False
 _lock_file_path: Optional[Path] = None
 
 log = logging.getLogger("tg-ws-tray")
+_runtime = ProxyAppRuntime(
+    APP_DIR,
+    default_config=DEFAULT_CONFIG,
+    logger_name="tg-ws-tray",
+    on_error=lambda text: _show_error(text),
+)
+CONFIG_FILE = _runtime.config_file
+LOG_FILE = _runtime.log_file
+UPSTREAM_MODE_DIRECT = "telegram_ws_direct"
+UPSTREAM_MODE_AUTO = "auto"
+UPSTREAM_MODE_RELAY = "relay_ws"
+
+
+def _normalize_upstream_mode(value: Optional[str]) -> str:
+    if value in (UPSTREAM_MODE_DIRECT, UPSTREAM_MODE_AUTO, UPSTREAM_MODE_RELAY):
+        return value
+    return UPSTREAM_MODE_DIRECT
+
+
+def _relay_host(relay_url: Optional[str]) -> Optional[str]:
+    if not relay_url:
+        return None
+    try:
+        return urlparse(relay_url.strip()).hostname
+    except Exception:
+        return None
+
+
+def _upstream_mode_label(value: Optional[str]) -> str:
+    normalized = _normalize_upstream_mode(value)
+    if normalized == UPSTREAM_MODE_AUTO:
+        return "Auto: direct -> relay -> TCP"
+    if normalized == UPSTREAM_MODE_RELAY:
+        return "Relay only"
+    return "Direct Telegram WS"
+
+
+def _upstream_mode_summary(value: Optional[str],
+                           relay_url: Optional[str] = None) -> str:
+    normalized = _normalize_upstream_mode(value)
+    relay_host = _relay_host(relay_url)
+    if normalized == UPSTREAM_MODE_AUTO:
+        if relay_host:
+            return (
+                "Сначала direct Telegram WS, затем relay "
+                f"{relay_host}, затем direct TCP fallback."
+            )
+        return (
+            "Сначала direct Telegram WS. Укажите relay URL, "
+            "чтобы добавить relay fallback перед direct TCP."
+        )
+    if normalized == UPSTREAM_MODE_RELAY:
+        if relay_host:
+            return f"Сначала relay {relay_host}, затем direct TCP fallback."
+        return "Сначала relay, затем direct TCP fallback."
+    return "Используется direct Telegram WS, затем direct TCP fallback."
+
+
+def _validate_relay_url(value: str) -> bool:
+    try:
+        parsed = urlparse(value.strip())
+    except Exception:
+        return False
+    return parsed.scheme in ("ws", "wss") and bool(parsed.hostname)
 
 
 # Single-instance lock
@@ -130,48 +183,19 @@ def _acquire_lock() -> bool:
 # Filesystem helpers
 
 def _ensure_dirs():
-    APP_DIR.mkdir(parents=True, exist_ok=True)
+    _runtime.ensure_dirs()
 
 
 def load_config() -> dict:
-    _ensure_dirs()
-    if CONFIG_FILE.exists():
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            for k, v in DEFAULT_CONFIG.items():
-                data.setdefault(k, v)
-            return data
-        except Exception as exc:
-            log.warning("Failed to load config: %s", exc)
-    return dict(DEFAULT_CONFIG)
+    return _runtime.load_config()
 
 
 def save_config(cfg: dict):
-    _ensure_dirs()
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2, ensure_ascii=False)
+    _runtime.save_config(cfg)
 
 
 def setup_logging(verbose: bool = False):
-    _ensure_dirs()
-    root = logging.getLogger()
-    root.setLevel(logging.DEBUG if verbose else logging.INFO)
-
-    fh = logging.FileHandler(str(LOG_FILE), encoding="utf-8")
-    fh.setLevel(logging.DEBUG)
-    fh.setFormatter(logging.Formatter(
-        "%(asctime)s  %(levelname)-5s  %(name)s  %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"))
-    root.addHandler(fh)
-
-    if not getattr(sys, "frozen", False):
-        ch = logging.StreamHandler(sys.stdout)
-        ch.setLevel(logging.DEBUG if verbose else logging.INFO)
-        ch.setFormatter(logging.Formatter(
-            "%(asctime)s  %(levelname)-5s  %(message)s",
-            datefmt="%H:%M:%S"))
-        root.addHandler(ch)
+    _runtime.setup_logging(verbose)
 
 
 # Menubar icon
@@ -246,73 +270,16 @@ def _ask_yes_no(text: str, title: str = "TG WS Proxy") -> bool:
 
 # Proxy lifecycle
 
-def _run_proxy_thread(port: int, dc_opt: Dict[int, str], verbose: bool,
-                      host: str = '127.0.0.1'):
-    global _async_stop
-    loop = _asyncio.new_event_loop()
-    _asyncio.set_event_loop(loop)
-    stop_ev = _asyncio.Event()
-    _async_stop = (loop, stop_ev)
-
-    try:
-        loop.run_until_complete(
-            tg_ws_proxy._run(port, dc_opt, stop_event=stop_ev, host=host))
-    except Exception as exc:
-        log.error("Proxy thread crashed: %s", exc)
-        if "Address already in use" in str(exc):
-            _show_error(
-                "Не удалось запустить прокси:\n"
-                "Порт уже используется другим приложением.\n\n"
-                "Закройте приложение, использующее этот порт, "
-                "или измените порт в настройках прокси и перезапустите.")
-    finally:
-        loop.close()
-        _async_stop = None
-
-
 def start_proxy():
-    global _proxy_thread, _config
-    if _proxy_thread and _proxy_thread.is_alive():
-        log.info("Proxy already running")
-        return
-
-    cfg = _config
-    port = cfg.get("port", DEFAULT_CONFIG["port"])
-    host = cfg.get("host", DEFAULT_CONFIG["host"])
-    dc_ip_list = cfg.get("dc_ip", DEFAULT_CONFIG["dc_ip"])
-    verbose = cfg.get("verbose", False)
-
-    try:
-        dc_opt = tg_ws_proxy.parse_dc_ip_list(dc_ip_list)
-    except ValueError as e:
-        log.error("Bad config dc_ip: %s", e)
-        _show_error(f"Ошибка конфигурации:\n{e}")
-        return
-
-    log.info("Starting proxy on %s:%d ...", host, port)
-    _proxy_thread = threading.Thread(
-        target=_run_proxy_thread,
-        args=(port, dc_opt, verbose, host),
-        daemon=True, name="proxy")
-    _proxy_thread.start()
+    _runtime.start_proxy(_config)
 
 
 def stop_proxy():
-    global _proxy_thread, _async_stop
-    if _async_stop:
-        loop, stop_ev = _async_stop
-        loop.call_soon_threadsafe(stop_ev.set)
-        if _proxy_thread:
-            _proxy_thread.join(timeout=2)
-    _proxy_thread = None
-    log.info("Proxy stopped")
+    _runtime.stop_proxy()
 
 
 def restart_proxy():
-    log.info("Restarting proxy...")
-    stop_proxy()
-    time.sleep(0.3)
-    start_proxy()
+    _runtime.restart_proxy()
 
 
 # Menu callbacks
@@ -435,6 +402,57 @@ def _edit_config_dialog():
         _show_error(str(e))
         return
 
+    mode_default = _normalize_upstream_mode(
+        cfg.get("upstream_mode", DEFAULT_CONFIG["upstream_mode"]))
+    mode_hint = {
+        UPSTREAM_MODE_DIRECT: "direct",
+        UPSTREAM_MODE_AUTO: "auto",
+        UPSTREAM_MODE_RELAY: "relay",
+    }.get(mode_default, "direct")
+    upstream_mode_input = _osascript_input(
+        "Режим upstream:\n"
+        "  direct - только direct Telegram WS\n"
+        "  auto   - direct -> relay -> TCP\n"
+        "  relay  - relay -> TCP",
+        mode_hint,
+    )
+    if upstream_mode_input is None:
+        return
+    mode_key = upstream_mode_input.strip().lower()
+    upstream_mode = {
+        "direct": UPSTREAM_MODE_DIRECT,
+        "auto": UPSTREAM_MODE_AUTO,
+        "relay": UPSTREAM_MODE_RELAY,
+    }.get(mode_key)
+    if upstream_mode is None:
+        _show_error("Режим upstream должен быть direct, auto или relay.")
+        return
+
+    relay_url = _osascript_input(
+        "Relay URL (оставьте пустым, если relay не нужен):",
+        cfg.get("relay_url", ""),
+    )
+    if relay_url is None:
+        return
+    relay_url = relay_url.strip()
+    if upstream_mode == UPSTREAM_MODE_RELAY and not relay_url:
+        _show_error("Укажите relay URL для режима Relay only.")
+        return
+    if relay_url and not _validate_relay_url(relay_url):
+        _show_error(
+            "Relay URL должен быть в формате ws://host/path "
+            "или wss://host/path."
+        )
+        return
+
+    relay_token = _osascript_input(
+        "Relay token (можно оставить пустым):",
+        cfg.get("relay_token", ""),
+    )
+    if relay_token is None:
+        return
+    relay_token = relay_token.strip()
+
     # Verbose
     verbose = _ask_yes_no("Включить подробное логирование (verbose)?")
 
@@ -442,6 +460,9 @@ def _edit_config_dialog():
         "host": host,
         "port": port,
         "dc_ip": dc_lines,
+        "upstream_mode": upstream_mode,
+        "relay_url": relay_url,
+        "relay_token": relay_token,
         "verbose": verbose,
     }
     save_config(new_cfg)
@@ -535,10 +556,16 @@ class TgWsProxyApp(_TgWsProxyAppBase):
 
         host = _config.get("host", DEFAULT_CONFIG["host"])
         port = _config.get("port", DEFAULT_CONFIG["port"])
+        upstream_mode = _config.get("upstream_mode", DEFAULT_CONFIG["upstream_mode"])
+        relay_url = _config.get("relay_url", DEFAULT_CONFIG["relay_url"])
 
         self._open_tg_item = rumps.MenuItem(
             f"Открыть в Telegram ({host}:{port})",
             callback=_on_open_in_telegram)
+        self._route_item = rumps.MenuItem(
+            f"Маршрут: {_upstream_mode_label(upstream_mode)}")
+        self._route_summary_item = rumps.MenuItem(
+            _upstream_mode_summary(upstream_mode, relay_url))
         self._restart_item = rumps.MenuItem(
             "Перезапустить прокси",
             callback=_on_restart)
@@ -557,6 +584,9 @@ class TgWsProxyApp(_TgWsProxyAppBase):
             menu=[
                 self._open_tg_item,
                 None,
+                self._route_item,
+                self._route_summary_item,
+                None,
                 self._restart_item,
                 self._settings_item,
                 self._logs_item,
@@ -565,21 +595,20 @@ class TgWsProxyApp(_TgWsProxyAppBase):
     def update_menu_title(self):
         host = _config.get("host", DEFAULT_CONFIG["host"])
         port = _config.get("port", DEFAULT_CONFIG["port"])
+        upstream_mode = _config.get("upstream_mode", DEFAULT_CONFIG["upstream_mode"])
+        relay_url = _config.get("relay_url", DEFAULT_CONFIG["relay_url"])
         self._open_tg_item.title = (
             f"Открыть в Telegram ({host}:{port})")
+        self._route_item.title = f"Маршрут: {_upstream_mode_label(upstream_mode)}"
+        self._route_summary_item.title = _upstream_mode_summary(
+            upstream_mode, relay_url)
 
 
 def run_menubar():
     global _app, _config
 
-    _config = load_config()
-    save_config(_config)
-
-    if LOG_FILE.exists():
-        try:
-            LOG_FILE.unlink()
-        except Exception:
-            pass
+    _config = _runtime.prepare()
+    _runtime.reset_log_file()
 
     setup_logging(_config.get("verbose", False))
     log.info("TG WS Proxy menubar app starting")
