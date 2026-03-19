@@ -12,6 +12,12 @@
 
 # TG WS Proxy
 
+Это fork проекта [Flowseal/tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy), в котором основной фокус сейчас на:
+
+- Android-релизах и Android-клиенте
+- self-hosted relay и fallback-цепочке `direct WS -> relay -> TCP`
+- практической поддержке домашних relay-сценариев
+
 **Локальный SOCKS5-прокси** для Telegram Desktop и Android, который **ускоряет работу Telegram**, перенаправляя трафик через WebSocket-соединения. Данные передаются в том же зашифрованном виде, а для работы не нужны сторонние сервера.
 
 <img width="529" height="487" alt="image" src="https://github.com/user-attachments/assets/6a4cf683-0df8-43af-86c1-0e8f08682b62" />
@@ -68,7 +74,7 @@ direct Telegram WS -> relay WS -> direct TCP
 
 ### macOS
 
-Перейдите на [страницу релизов](https://github.com/Flowseal/tg-ws-proxy/releases) и скачайте **`TgWsProxy_macos_universal.dmg`** — универсальная сборка для Apple Silicon и Intel.
+Перейдите на [страницу релизов](https://github.com/Dark-Avery/tg-ws-proxy/releases) и скачайте **`TgWsProxy_macos_universal.dmg`** — универсальная сборка для Apple Silicon и Intel.
 
 1. Открыть образ
 2. Перенести **TG WS Proxy.app** в папку **Applications**
@@ -76,7 +82,7 @@ direct Telegram WS -> relay WS -> direct TCP
 
 ### Linux
 
-Для Debian/Ubuntu скачайте со [страницы релизов](https://github.com/Flowseal/tg-ws-proxy/releases) пакет **`TgWsProxy_linux_amd64.deb`**.
+Для Debian/Ubuntu скачайте со [страницы релизов](https://github.com/Dark-Avery/tg-ws-proxy/releases) пакет **`TgWsProxy_linux_amd64.deb`**.
 
 Для остальных дистрибутивов можно использовать **`TgWsProxy_linux_amd64`** (бинарный файл для x86_64).
 
