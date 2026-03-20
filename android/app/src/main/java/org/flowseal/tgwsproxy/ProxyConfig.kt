@@ -7,6 +7,7 @@ data class ProxyConfig(
     val upstreamMode: String = UpstreamMode.DIRECT,
     val relayUrlText: String = "",
     val relayTokenText: String = "",
+    val directWsTimeoutText: String = formatTimeoutSeconds(DEFAULT_DIRECT_WS_TIMEOUT_SECONDS),
     val verbose: Boolean = false,
 ) {
     fun validate(): ValidationResult {
@@ -43,6 +44,15 @@ data class ProxyConfig(
         val upstreamModeValue = UpstreamMode.normalize(upstreamMode)
         val relayUrlValue = relayUrlText.trim()
         val relayTokenValue = relayTokenText.trim()
+        val directWsTimeoutValue = directWsTimeoutText.trim().toDoubleOrNull()
+            ?: return ValidationResult(
+                errorMessage = "Таймаут direct WS должен быть числом."
+            )
+        if (directWsTimeoutValue <= 0.0) {
+            return ValidationResult(
+                errorMessage = "Таймаут direct WS должен быть больше нуля."
+            )
+        }
 
         if (upstreamModeValue == UpstreamMode.RELAY && relayUrlValue.isEmpty()) {
             return ValidationResult(errorMessage = "Укажите relay URL для режима Relay only.")
@@ -59,6 +69,7 @@ data class ProxyConfig(
                 upstreamMode = upstreamModeValue,
                 relayUrl = relayUrlValue,
                 relayToken = relayTokenValue,
+                directWsTimeoutSeconds = directWsTimeoutValue,
                 verbose = verbose,
             )
         )
@@ -67,10 +78,19 @@ data class ProxyConfig(
     companion object {
         const val DEFAULT_HOST = "127.0.0.1"
         const val DEFAULT_PORT = 1080
+        const val DEFAULT_DIRECT_WS_TIMEOUT_SECONDS = 10.0
         val DEFAULT_DC_IP_LINES = listOf(
             "2:149.154.167.220",
             "4:149.154.167.220",
         )
+
+        fun formatTimeoutSeconds(value: Double): String {
+            return if (value % 1.0 == 0.0) {
+                value.toInt().toString()
+            } else {
+                value.toString()
+            }
+        }
 
         private fun isIpv4Address(value: String): Boolean {
             val octets = value.split(".")
@@ -109,5 +129,6 @@ data class NormalizedProxyConfig(
     val upstreamMode: String,
     val relayUrl: String,
     val relayToken: String,
+    val directWsTimeoutSeconds: Double,
     val verbose: Boolean,
 )

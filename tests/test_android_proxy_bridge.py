@@ -114,6 +114,7 @@ class AndroidProxyBridgeTests(unittest.TestCase):
                 "auto",
                 "wss://relay.example.com/connect",
                 "secret",
+                3.5,
                 True,
             )
         finally:
@@ -126,6 +127,7 @@ class AndroidProxyBridgeTests(unittest.TestCase):
             "wss://relay.example.com/connect",
         )
         self.assertEqual(captured["config"]["relay_token"], "secret")
+        self.assertEqual(captured["config"]["direct_ws_timeout_seconds"], 3.5)
         self.assertTrue(captured["verbose"])
 
 

@@ -16,6 +16,12 @@ class ProxySettingsStore(context: Context) {
             upstreamMode = preferences.getString(KEY_UPSTREAM_MODE, UpstreamMode.DIRECT).orEmpty(),
             relayUrlText = preferences.getString(KEY_RELAY_URL, "").orEmpty(),
             relayTokenText = preferences.getString(KEY_RELAY_TOKEN, "").orEmpty(),
+            directWsTimeoutText = ProxyConfig.formatTimeoutSeconds(
+                preferences.getFloat(
+                    KEY_DIRECT_WS_TIMEOUT,
+                    ProxyConfig.DEFAULT_DIRECT_WS_TIMEOUT_SECONDS.toFloat(),
+                ).toDouble()
+            ),
             verbose = preferences.getBoolean(KEY_VERBOSE, false),
         )
     }
@@ -28,6 +34,7 @@ class ProxySettingsStore(context: Context) {
             .putString(KEY_UPSTREAM_MODE, config.upstreamMode)
             .putString(KEY_RELAY_URL, config.relayUrl)
             .putString(KEY_RELAY_TOKEN, config.relayToken)
+            .putFloat(KEY_DIRECT_WS_TIMEOUT, config.directWsTimeoutSeconds.toFloat())
             .putBoolean(KEY_VERBOSE, config.verbose)
             .apply()
     }
@@ -40,6 +47,7 @@ class ProxySettingsStore(context: Context) {
         private const val KEY_UPSTREAM_MODE = "upstream_mode"
         private const val KEY_RELAY_URL = "relay_url"
         private const val KEY_RELAY_TOKEN = "relay_token"
+        private const val KEY_DIRECT_WS_TIMEOUT = "direct_ws_timeout_seconds"
         private const val KEY_VERBOSE = "verbose"
     }
 }

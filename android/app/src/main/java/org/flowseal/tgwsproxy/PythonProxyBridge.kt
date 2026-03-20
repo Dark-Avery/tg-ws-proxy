@@ -20,6 +20,7 @@ object PythonProxyBridge {
             config.upstreamMode,
             config.relayUrl,
             config.relayToken,
+            config.directWsTimeoutSeconds,
             config.verbose,
         ).toString()
     }

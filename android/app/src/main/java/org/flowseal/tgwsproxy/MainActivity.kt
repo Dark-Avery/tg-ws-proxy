@@ -128,6 +128,7 @@ class MainActivity : AppCompatActivity() {
         )
         binding.relayUrlInput.setText(config.relayUrlText)
         binding.relayTokenInput.setText(config.relayTokenText)
+        binding.directWsTimeoutInput.setText(config.directWsTimeoutText)
         binding.verboseSwitch.isChecked = config.verbose
         renderUpstreamConfigState(
             config.upstreamMode,
@@ -143,6 +144,7 @@ class MainActivity : AppCompatActivity() {
             upstreamMode = selectedUpstreamModeValue(),
             relayUrlText = binding.relayUrlInput.text?.toString().orEmpty(),
             relayTokenText = binding.relayTokenInput.text?.toString().orEmpty(),
+            directWsTimeoutText = binding.directWsTimeoutInput.text?.toString().orEmpty(),
             verbose = binding.verboseSwitch.isChecked,
         )
     }
