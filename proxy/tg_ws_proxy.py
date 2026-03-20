@@ -93,6 +93,8 @@ _ws_blacklist: Set[_RouteStateKey] = set()
 _dc_fail_until: Dict[_RouteStateKey, float] = {}
 _DC_FAIL_COOLDOWN = 30.0  # seconds to keep reduced WS timeout after failure
 _WS_FAIL_TIMEOUT = 2.0    # quick-retry timeout after a recent WS failure
+_DEFAULT_DIRECT_WS_TIMEOUT = 10.0
+_direct_ws_timeout_seconds = _DEFAULT_DIRECT_WS_TIMEOUT
 
 # Last successful route per (dc, is_media)
 _last_good_routes: Dict[_RoutePreferenceKey, Tuple[str, float]] = {}
@@ -583,6 +585,13 @@ def _set_last_good_route(dc: int, is_media: Optional[bool],
         route_name, time.monotonic())
 
 
+def configure_route_timing(*,
+                           direct_ws_timeout_seconds: float
+                           = _DEFAULT_DIRECT_WS_TIMEOUT) -> None:
+    global _direct_ws_timeout_seconds
+    _direct_ws_timeout_seconds = max(0.5, float(direct_ws_timeout_seconds))
+
+
 def _reorder_routes_by_last_good(routes: List['_UpstreamRoute'],
                                  dc: int,
                                  is_media: Optional[bool]
@@ -652,7 +661,9 @@ class _DirectTelegramWsRoute(_UpstreamRoute):
             return None
 
         remaining = _route_cooldown_remaining(self.state_key, now)
-        ws_timeout = _WS_FAIL_TIMEOUT if remaining > 0 else 10.0
+        ws_timeout = (_WS_FAIL_TIMEOUT
+                      if remaining > 0
+                      else _direct_ws_timeout_seconds)
         if remaining > 0:
             log.debug("[%s] DC%d%s WS cooldown (%.0fs) -> quick retry",
                       label, self.dc, self.media_tag, remaining)
@@ -1326,7 +1337,8 @@ async def _run(port: int, dc_opt: Dict[int, Optional[str]],
                host: str = '127.0.0.1',
                upstream_mode: str = DEFAULT_UPSTREAM_MODE,
                relay_url: Optional[str] = None,
-               relay_token: str = ''):
+               relay_token: str = '',
+               direct_ws_timeout_seconds: float = _DEFAULT_DIRECT_WS_TIMEOUT):
     global _dc_opt, _server_instance, _server_stop_event
     global _upstream_mode, _relay_url, _relay_token
     _dc_opt = dc_opt
@@ -1334,6 +1346,8 @@ async def _run(port: int, dc_opt: Dict[int, Optional[str]],
     _upstream_mode = upstream_mode
     _relay_url = relay_url
     _relay_token = relay_token
+    configure_route_timing(
+        direct_ws_timeout_seconds=direct_ws_timeout_seconds)
 
     server = await asyncio.start_server(
         _handle_client, host, port)
@@ -1355,6 +1369,7 @@ async def _run(port: int, dc_opt: Dict[int, Optional[str]],
     log.info("  Upstream mode: %s", upstream_mode)
     if relay_url:
         log.info("  Relay URL: %s", relay_url)
+    log.info("  Direct WS timeout: %.1fs", _direct_ws_timeout_seconds)
     log.info("=" * 60)
     log.info("  Configure Telegram Desktop:")
     log.info("    SOCKS5 proxy -> %s:%d  (no user/pass)", host, port)
@@ -1415,13 +1430,15 @@ def run_proxy(port: int, dc_opt: Dict[int, str],
               host: str = '127.0.0.1',
               upstream_mode: str = DEFAULT_UPSTREAM_MODE,
               relay_url: Optional[str] = None,
-              relay_token: str = ''):
+              relay_token: str = '',
+              direct_ws_timeout_seconds: float = _DEFAULT_DIRECT_WS_TIMEOUT):
     """Run the proxy (blocking). Can be called from threads."""
     asyncio.run(_run(
         port, dc_opt, stop_event, host,
         upstream_mode=upstream_mode,
         relay_url=relay_url,
-        relay_token=relay_token))
+        relay_token=relay_token,
+        direct_ws_timeout_seconds=direct_ws_timeout_seconds))
 
 
 def main():
@@ -1443,6 +1460,9 @@ def main():
                     help='Relay WebSocket URL, e.g. wss://relay.example.com/connect')
     ap.add_argument('--relay-token', type=str, default='',
                     help='Shared auth token for relay mode')
+    ap.add_argument('--direct-ws-timeout-seconds', type=float,
+                    default=_DEFAULT_DIRECT_WS_TIMEOUT,
+                    help='How long to wait for direct Telegram WS before trying fallback routes')
     ap.add_argument('-v', '--verbose', action='store_true',
                     help='Debug logging')
     args = ap.parse_args()
@@ -1467,7 +1487,8 @@ def main():
             args.port, dc_opt, host=args.host,
             upstream_mode=args.upstream_mode,
             relay_url=args.relay_url,
-            relay_token=args.relay_token))
+            relay_token=args.relay_token,
+            direct_ws_timeout_seconds=args.direct_ws_timeout_seconds))
     except KeyboardInterrupt:
         log.info("Shutting down. Final stats: %s", _stats.summary())
 

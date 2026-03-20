@@ -17,6 +17,7 @@ from proxy.tg_ws_proxy import (
     _route_cooldown_remaining,
     _set_route_cooldown,
     _set_last_good_route,
+    configure_route_timing,
     reset_route_fail_states,
 )
 
@@ -24,6 +25,7 @@ from proxy.tg_ws_proxy import (
 class UpstreamRouteTests(unittest.TestCase):
     def setUp(self):
         reset_route_fail_states()
+        configure_route_timing()
 
     def test_orders_direct_telegram_ws_route_first_for_regular_dc(self):
         routes = _ordered_upstream_routes(2, False, "149.154.167.220")
@@ -163,6 +165,23 @@ class UpstreamRouteTests(unittest.TestCase):
 
         self.assertEqual([route.route_name for route in routes],
                          ["telegram_ws_direct", "relay_ws"])
+
+    def test_direct_route_uses_configured_timeout_outside_cooldown(self):
+        route = _DirectTelegramWsRoute(2, False, "149.154.167.220")
+        configure_route_timing(direct_ws_timeout_seconds=3.5)
+
+        async def _run():
+            with patch("proxy.tg_ws_proxy._ws_pool.get",
+                       return_value=None), \
+                    patch("proxy.tg_ws_proxy.RawWebSocket.connect",
+                          side_effect=TimeoutError()) as connect_mock:
+                ws = await route.try_connect("test", "149.154.167.41", 443)
+            return ws, connect_mock
+
+        ws, connect_mock = asyncio.run(_run())
+
+        self.assertIsNone(ws)
+        self.assertEqual(connect_mock.await_args_list[0].kwargs["timeout"], 3.5)
 
 
 class RelayRouteAsyncTests(unittest.IsolatedAsyncioTestCase):

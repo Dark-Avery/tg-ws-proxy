@@ -19,6 +19,7 @@ DEFAULT_CONFIG = {
     "upstream_mode": "telegram_ws_direct",
     "relay_url": "",
     "relay_token": "",
+    "direct_ws_timeout_seconds": 10.0,
     "verbose": False,
 }
 
@@ -122,7 +123,8 @@ class ProxyAppRuntime:
                           host: str = "127.0.0.1",
                           upstream_mode: str = "telegram_ws_direct",
                           relay_url: str = "",
-                          relay_token: str = ""):
+                          relay_token: str = "",
+                          direct_ws_timeout_seconds: float = 10.0):
         loop = _asyncio.new_event_loop()
         _asyncio.set_event_loop(loop)
         stop_ev = _asyncio.Event()
@@ -134,7 +136,8 @@ class ProxyAppRuntime:
                     port, dc_opt, stop_event=stop_ev, host=host,
                     upstream_mode=upstream_mode,
                     relay_url=relay_url or None,
-                    relay_token=relay_token))
+                    relay_token=relay_token,
+                    direct_ws_timeout_seconds=direct_ws_timeout_seconds))
         except Exception as exc:
             self.log.error("Proxy thread crashed: %s", exc)
             if ("10048" in str(exc) or
@@ -164,6 +167,9 @@ class ProxyAppRuntime:
             "relay_url", self.default_config["relay_url"])
         relay_token = active_cfg.get(
             "relay_token", self.default_config["relay_token"])
+        direct_ws_timeout_seconds = active_cfg.get(
+            "direct_ws_timeout_seconds",
+            self.default_config["direct_ws_timeout_seconds"])
 
         try:
             dc_opt = self.parse_dc_ip_list(dc_ip_list)
@@ -175,7 +181,15 @@ class ProxyAppRuntime:
         self.log.info("Starting proxy on %s:%d ...", host, port)
         self._proxy_thread = self.thread_factory(
             target=self._run_proxy_thread,
-            args=(port, dc_opt, host, upstream_mode, relay_url, relay_token),
+            args=(
+                port,
+                dc_opt,
+                host,
+                upstream_mode,
+                relay_url,
+                relay_token,
+                direct_ws_timeout_seconds,
+            ),
             daemon=True,
             name="proxy")
         self._proxy_thread.start()
