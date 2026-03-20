@@ -302,7 +302,7 @@ def _edit_config_dialog():
 
     root = ctk.CTk()
     root.title("TG WS Proxy — Настройки")
-    root.resizable(False, False)
+    root.resizable(True, True)
     root.attributes("-topmost", True)
 
     icon_img = _load_icon()
@@ -321,13 +321,15 @@ def _edit_config_dialog():
     TEXT_SECONDARY = "#707579"
     FONT_FAMILY = "Sans"
 
-    w, h = 420, 480
     sw = root.winfo_screenwidth()
     sh = root.winfo_screenheight()
+    w = 460
+    h = min(760, max(620, sh - 80))
     root.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
+    root.minsize(440, 620)
     root.configure(fg_color=BG)
 
-    frame = ctk.CTkFrame(root, fg_color=BG, corner_radius=0)
+    frame = ctk.CTkScrollableFrame(root, fg_color=BG, corner_radius=0)
     frame.pack(fill="both", expand=True, padx=24, pady=20)
 
     # Host
