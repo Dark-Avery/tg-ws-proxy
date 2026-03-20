@@ -108,6 +108,16 @@ def _validate_relay_url(value: str) -> bool:
     return parsed.scheme in ("ws", "wss") and bool(parsed.hostname)
 
 
+def _format_timeout_seconds(value: object) -> str:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        numeric = float(DEFAULT_CONFIG["direct_ws_timeout_seconds"])
+    if numeric.is_integer():
+        return str(int(numeric))
+    return str(numeric)
+
+
 # Single-instance lock
 
 def _same_process(lock_meta: dict, proc: psutil.Process) -> bool:
@@ -453,6 +463,25 @@ def _edit_config_dialog():
         return
     relay_token = relay_token.strip()
 
+    direct_ws_timeout_input = _osascript_input(
+        "Таймаут direct WS перед relay (в секундах):",
+        _format_timeout_seconds(
+            cfg.get(
+                "direct_ws_timeout_seconds",
+                DEFAULT_CONFIG["direct_ws_timeout_seconds"],
+            )
+        ),
+    )
+    if direct_ws_timeout_input is None:
+        return
+    try:
+        direct_ws_timeout = float(direct_ws_timeout_input.strip())
+        if direct_ws_timeout <= 0:
+            raise ValueError
+    except ValueError:
+        _show_error("Таймаут direct WS должен быть положительным числом.")
+        return
+
     # Verbose
     verbose = _ask_yes_no("Включить подробное логирование (verbose)?")
 
@@ -463,6 +492,7 @@ def _edit_config_dialog():
         "upstream_mode": upstream_mode,
         "relay_url": relay_url,
         "relay_token": relay_token,
+        "direct_ws_timeout_seconds": direct_ws_timeout,
         "verbose": verbose,
     }
     save_config(new_cfg)

@@ -105,6 +105,16 @@ def _validate_relay_url(value: str) -> bool:
     return parsed.scheme in ("ws", "wss") and bool(parsed.hostname)
 
 
+def _format_timeout_seconds(value: object) -> str:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        numeric = float(DEFAULT_CONFIG["direct_ws_timeout_seconds"])
+    if numeric.is_integer():
+        return str(int(numeric))
+    return str(numeric)
+
+
 def _same_process(lock_meta: dict, proc: psutil.Process) -> bool:
     try:
         lock_ct = float(lock_meta.get("create_time", 0.0))
@@ -471,6 +481,22 @@ def _edit_config_dialog():
         border_width=1, text_color=TEXT_PRIMARY)
     relay_token_entry.pack(anchor="w", pady=(0, 8))
 
+    ctk.CTkLabel(frame, text="Таймаут direct WS перед relay (сек)",
+                 font=(FONT_FAMILY, 13), text_color=TEXT_PRIMARY,
+                 anchor="w").pack(anchor="w", pady=(0, 4))
+    direct_ws_timeout_var = ctk.StringVar(
+        value=_format_timeout_seconds(
+            cfg.get("direct_ws_timeout_seconds",
+                    DEFAULT_CONFIG["direct_ws_timeout_seconds"])
+        )
+    )
+    direct_ws_timeout_entry = ctk.CTkEntry(
+        frame, textvariable=direct_ws_timeout_var, width=120, height=36,
+        font=(FONT_FAMILY, 13), corner_radius=10,
+        fg_color=FIELD_BG, border_color=FIELD_BORDER,
+        border_width=1, text_color=TEXT_PRIMARY)
+    direct_ws_timeout_entry.pack(anchor="w", pady=(0, 12))
+
     upstream_summary_var = ctk.StringVar(
         value=_upstream_mode_summary(upstream_mode, relay_url_var.get()))
     upstream_summary_label = ctk.CTkLabel(
@@ -546,6 +572,14 @@ def _edit_config_dialog():
             upstream_var.get(), UPSTREAM_MODE_DIRECT)
         relay_url_val = relay_url_var.get().strip()
         relay_token_val = relay_token_var.get().strip()
+        try:
+            direct_ws_timeout_val = float(
+                direct_ws_timeout_var.get().strip())
+            if direct_ws_timeout_val <= 0:
+                raise ValueError
+        except ValueError:
+            _show_error("Таймаут direct WS должен быть положительным числом.")
+            return
         if (upstream_mode_val == UPSTREAM_MODE_RELAY and
                 not relay_url_val):
             _show_error("Укажите relay URL для режима Relay only.")
@@ -563,6 +597,7 @@ def _edit_config_dialog():
             "upstream_mode": upstream_mode_val,
             "relay_url": relay_url_val,
             "relay_token": relay_token_val,
+            "direct_ws_timeout_seconds": direct_ws_timeout_val,
             "verbose": verbose_var.get(),
             "autostart": (autostart_var.get() if autostart_var is not None else False),
         }
