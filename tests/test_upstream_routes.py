@@ -4,9 +4,11 @@ import json
 from unittest.mock import patch
 
 from proxy.tg_ws_proxy import (
+    _DC_FAIL_COOLDOWN,
     _DirectTelegramWsRoute,
     _get_last_good_route,
     _LAST_GOOD_ROUTE_TTL,
+    _record_route_session_result,
     _try_upstream_routes,
     _format_exception_for_log,
     _build_relay_handshake,
@@ -133,6 +135,23 @@ class UpstreamRouteTests(unittest.TestCase):
         self.assertEqual([route.route_name for route in routes],
                          ["relay_ws", "telegram_ws_direct"])
 
+    def test_auto_mode_prefers_relay_when_direct_route_on_cooldown(self):
+        with patch("proxy.tg_ws_proxy.time.monotonic", return_value=100.0):
+            _set_route_cooldown(
+                ("telegram_ws_direct", 2, False),
+                100.0,
+                cooldown=_DC_FAIL_COOLDOWN,
+            )
+            routes = _ordered_upstream_routes(
+                2, False, "149.154.167.220",
+                upstream_mode="auto",
+                relay_url="wss://relay.example.com/connect",
+                relay_token="secret",
+            )
+
+        self.assertEqual([route.route_name for route in routes],
+                         ["relay_ws", "telegram_ws_direct"])
+
     def test_reorder_routes_by_last_good_keeps_order_when_preference_missing(self):
         direct = _DirectTelegramWsRoute(2, False, "149.154.167.220")
         relay = _RelayWsRoute(
@@ -165,6 +184,35 @@ class UpstreamRouteTests(unittest.TestCase):
 
         self.assertEqual([route.route_name for route in routes],
                          ["telegram_ws_direct", "relay_ws"])
+
+    def test_degraded_direct_media_sessions_trigger_cooldown(self):
+        with patch("proxy.tg_ws_proxy._upstream_mode", "auto"), \
+                patch("proxy.tg_ws_proxy.time.monotonic",
+                      side_effect=[100.0, 101.0]):
+            _record_route_session_result(
+                "test", "telegram_ws_direct", 2, True, 12.0, 32 * 1024)
+            _record_route_session_result(
+                "test", "telegram_ws_direct", 2, True, 11.0, 16 * 1024)
+
+        remaining = _route_cooldown_remaining(
+            ("telegram_ws_direct", 2, True), 101.0)
+        self.assertGreater(remaining, 0.0)
+        self.assertLessEqual(remaining, _DC_FAIL_COOLDOWN)
+
+    def test_healthy_direct_media_session_clears_degraded_streak(self):
+        with patch("proxy.tg_ws_proxy._upstream_mode", "auto"), \
+                patch("proxy.tg_ws_proxy.time.monotonic",
+                      side_effect=[100.0, 101.0, 102.0]):
+            _record_route_session_result(
+                "test", "telegram_ws_direct", 2, True, 12.0, 32 * 1024)
+            _record_route_session_result(
+                "test", "telegram_ws_direct", 2, True, 12.0, 128 * 1024)
+            _record_route_session_result(
+                "test", "telegram_ws_direct", 2, True, 12.0, 32 * 1024)
+
+        remaining = _route_cooldown_remaining(
+            ("telegram_ws_direct", 2, True), 102.0)
+        self.assertEqual(remaining, 0.0)
 
     def test_direct_route_uses_configured_timeout_outside_cooldown(self):
         route = _DirectTelegramWsRoute(2, False, "149.154.167.220")
