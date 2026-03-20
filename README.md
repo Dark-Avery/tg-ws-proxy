@@ -43,6 +43,14 @@ direct Telegram WS -> relay WS -> direct TCP
 Это полезно, если direct путь до `kws*.web.telegram.org` плохо работает,
 например на мобильной сети, а в другой сети этот маршрут доступен.
 
+fork дополнительно поддерживает:
+
+- настраиваемый timeout прямого `direct WS` перед переключением на relay в
+  режиме `Auto`
+- более агрессивный `Auto`-failover: relay может временно
+  предпочитаться не только при connect-fail, но и после серии явно
+  деградированных media-сессий direct WS
+
 ## 🚀 Быстрый старт
 
 ### Windows
@@ -186,6 +194,7 @@ tg-ws-proxy [--port PORT] [--host HOST] [--dc-ip DC:IP ...] [-v]
 | `--upstream-mode` | `telegram_ws_direct` | `telegram_ws_direct`, `auto`, `relay_ws` |
 | `--relay-url` | пусто | URL self-hosted relay (`ws://` или `wss://`) |
 | `--relay-token` | пусто | Токен для авторизации на relay |
+| `--direct-ws-timeout-seconds` | `10.0` | Сколько секунд `Auto` ждёт direct WS перед попыткой relay |
 | `-v`, `--verbose` | выкл. | Подробное логирование (DEBUG) |
 
 **Примеры:**
@@ -200,6 +209,7 @@ tg-ws-proxy --port 9050 --dc-ip 1:149.154.175.205 --dc-ip 2:149.154.167.220
 # Auto mode с relay
 tg-ws-proxy \
   --upstream-mode auto \
+  --direct-ws-timeout-seconds 4 \
   --relay-url wss://relay.example.com/connect \
   --relay-token replace-me
 
@@ -274,6 +284,7 @@ Tray-приложение хранит данные в:
   "upstream_mode": "auto",
   "relay_url": "wss://relay.example.com/connect",
   "relay_token": "replace-me",
+  "direct_ws_timeout_seconds": 4.0,
   "verbose": false
 }
 ```
@@ -291,6 +302,16 @@ Self-hosted relay нужен для сценариев, где direct WebSocket 
 - `Direct Telegram WS`
 - `Auto: direct -> relay -> TCP`
 - `Relay only`
+
+В режиме `Auto` сейчас работают два механизма переключения на relay:
+
+- обычный hard-failover, если direct WS не смог подключиться по
+  timeout/SSL/connect error;
+- временное предпочтение relay после серии явно деградированных
+  direct WS media-сессий.
+
+Параметр `direct_ws_timeout_seconds` влияет только на режим `Auto` и
+определяет, сколько ждать попытку direct WS перед переходом к relay.
 
 Краткая инструкция и варианты размещения relay:
 

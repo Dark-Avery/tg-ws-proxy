@@ -16,6 +16,9 @@ direct Telegram WS -> relay WS -> direct TCP
 - сначала клиент пытается подключиться к `kws*.web.telegram.org`
   напрямую;
 - если direct WS не поднялся, клиент может уйти на self-hosted relay;
+- если direct WS формально поднимается, но несколько media-сессий подряд
+  выглядят явно деградированными, `Auto` тоже может временно предпочесть
+  relay;
 - если relay тоже недоступен, остаётся обычный direct TCP fallback.
 
 ## Какие бинарники использовать
@@ -83,12 +86,16 @@ GET /healthz
 - `Маршрут upstream`
 - `Relay URL`
 - `Relay token`
+- `Direct WS timeout before relay (sec)`
 
 Режимы:
 
 - `Direct Telegram WS` — только прямой `kws*`, затем direct TCP fallback
 - `Auto: direct -> relay -> TCP` — сначала direct WS, потом relay, потом TCP
 - `Relay only` — сначала relay, потом TCP
+
+`Direct WS timeout before relay (sec)` влияет только на режим `Auto` и
+задаёт, сколько ждать попытку прямого `kws*` перед переходом к relay.
 
 Пример:
 
@@ -103,6 +110,10 @@ GET /healthz
 - `Auto: direct -> relay -> TCP`
 - `Relay only`
 
+И отдельная настройка:
+
+- `Direct WS timeout before relay (sec)`
+
 Для домашнего relay обычно достаточно:
 
 - `Upstream route mode`: `Auto: direct -> relay -> TCP`
@@ -113,6 +124,10 @@ GET /healthz
 `kws*`, а на проблемной мобильной сети сможет автоматически уйти на
 relay.
 
+Если direct WS формально подключается, но ведёт себя плохо именно на
+медиа, `Auto` теперь может временно начать предпочитать relay и без
+жёсткого connect-fail.
+
 ### CLI
 
 Доступны аргументы:
@@ -120,6 +135,7 @@ relay.
 ```bash
 python proxy/tg_ws_proxy.py \
   --upstream-mode auto \
+  --direct-ws-timeout-seconds 4 \
   --relay-url wss://relay.example.com/connect \
   --relay-token replace-me
 ```
