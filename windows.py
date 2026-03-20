@@ -481,7 +481,9 @@ def _edit_config_dialog():
         border_width=1, text_color=TEXT_PRIMARY)
     relay_token_entry.pack(anchor="w", pady=(0, 8))
 
-    ctk.CTkLabel(frame, text="Таймаут direct WS перед relay (сек)",
+    direct_ws_timeout_frame = ctk.CTkFrame(frame, fg_color="transparent")
+    ctk.CTkLabel(direct_ws_timeout_frame,
+                 text="Таймаут direct WS перед relay (сек)",
                  font=(FONT_FAMILY, 13), text_color=TEXT_PRIMARY,
                  anchor="w").pack(anchor="w", pady=(0, 4))
     direct_ws_timeout_var = ctk.StringVar(
@@ -491,7 +493,8 @@ def _edit_config_dialog():
         )
     )
     direct_ws_timeout_entry = ctk.CTkEntry(
-        frame, textvariable=direct_ws_timeout_var, width=120, height=36,
+        direct_ws_timeout_frame, textvariable=direct_ws_timeout_var,
+        width=120, height=36,
         font=(FONT_FAMILY, 13), corner_radius=10,
         fg_color=FIELD_BG, border_color=FIELD_BORDER,
         border_width=1, text_color=TEXT_PRIMARY)
@@ -510,10 +513,16 @@ def _edit_config_dialog():
             upstream_var.get(), UPSTREAM_MODE_DIRECT)
         relay_needed = selected_mode in (
             UPSTREAM_MODE_AUTO, UPSTREAM_MODE_RELAY)
+        timeout_needed = selected_mode == UPSTREAM_MODE_AUTO
         if relay_needed:
             relay_frame.pack(fill="x", pady=(0, 8), before=upstream_summary_label)
         else:
             relay_frame.pack_forget()
+        if timeout_needed:
+            direct_ws_timeout_frame.pack(
+                anchor="w", fill="x", before=upstream_summary_label)
+        else:
+            direct_ws_timeout_frame.pack_forget()
         upstream_summary_var.set(
             _upstream_mode_summary(selected_mode, relay_url_var.get()))
 

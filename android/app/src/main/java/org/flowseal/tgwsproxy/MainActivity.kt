@@ -293,8 +293,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderUpstreamConfigState(upstreamMode: String, relayUrl: String) {
         val requiresRelay = UpstreamMode.requiresRelayConfig(upstreamMode)
+        val requiresDirectWsTimeout = UpstreamMode.normalize(upstreamMode) == UpstreamMode.AUTO
         binding.relayUrlLayout.isVisible = requiresRelay
         binding.relayTokenLayout.isVisible = requiresRelay
+        binding.directWsTimeoutLayout.isVisible = requiresDirectWsTimeout
         binding.upstreamModeHint.text = UpstreamMode.summary(
             this,
             upstreamMode,

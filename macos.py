@@ -463,24 +463,26 @@ def _edit_config_dialog():
         return
     relay_token = relay_token.strip()
 
-    direct_ws_timeout_input = _osascript_input(
-        "Таймаут direct WS перед relay (в секундах):",
-        _format_timeout_seconds(
-            cfg.get(
-                "direct_ws_timeout_seconds",
-                DEFAULT_CONFIG["direct_ws_timeout_seconds"],
-            )
-        ),
+    direct_ws_timeout = float(
+        cfg.get(
+            "direct_ws_timeout_seconds",
+            DEFAULT_CONFIG["direct_ws_timeout_seconds"],
+        )
     )
-    if direct_ws_timeout_input is None:
-        return
-    try:
-        direct_ws_timeout = float(direct_ws_timeout_input.strip())
-        if direct_ws_timeout <= 0:
-            raise ValueError
-    except ValueError:
-        _show_error("Таймаут direct WS должен быть положительным числом.")
-        return
+    if upstream_mode == UPSTREAM_MODE_AUTO:
+        direct_ws_timeout_input = _osascript_input(
+            "Таймаут direct WS перед relay (в секундах):",
+            _format_timeout_seconds(direct_ws_timeout),
+        )
+        if direct_ws_timeout_input is None:
+            return
+        try:
+            direct_ws_timeout = float(direct_ws_timeout_input.strip())
+            if direct_ws_timeout <= 0:
+                raise ValueError
+        except ValueError:
+            _show_error("Таймаут direct WS должен быть положительным числом.")
+            return
 
     # Verbose
     verbose = _ask_yes_no("Включить подробное логирование (verbose)?")
