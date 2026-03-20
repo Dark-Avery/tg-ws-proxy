@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+import tkinter as tk
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
@@ -104,6 +105,39 @@ def _format_timeout_seconds(value: object) -> str:
     if numeric.is_integer():
         return str(int(numeric))
     return str(numeric)
+
+
+def _bind_text_context_menu(widget):
+    target = getattr(widget, "_entry", None) or getattr(widget, "_textbox", None) or widget
+    menu = tk.Menu(target, tearoff=0)
+
+    def _select_all():
+        try:
+            target.selection_range(0, "end")
+            target.icursor("end")
+        except Exception:
+            try:
+                target.tag_add("sel", "1.0", "end-1c")
+                target.mark_set("insert", "end-1c")
+                target.see("insert")
+            except Exception:
+                pass
+
+    menu.add_command(label="Вырезать", command=lambda: target.event_generate("<<Cut>>"))
+    menu.add_command(label="Копировать", command=lambda: target.event_generate("<<Copy>>"))
+    menu.add_command(label="Вставить", command=lambda: target.event_generate("<<Paste>>"))
+    menu.add_separator()
+    menu.add_command(label="Выделить всё", command=_select_all)
+
+    def _popup(event):
+        try:
+            target.focus_force()
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+        return "break"
+
+    target.bind("<Button-3>", _popup, add="+")
 
 
 def _same_process(lock_meta: dict, proc: psutil.Process) -> bool:
@@ -364,6 +398,7 @@ def _edit_config_dialog():
         text_color=TEXT_PRIMARY,
     )
     host_entry.pack(anchor="w", pady=(0, 12))
+    _bind_text_context_menu(host_entry)
 
     # Port
     ctk.CTkLabel(
@@ -387,6 +422,7 @@ def _edit_config_dialog():
         text_color=TEXT_PRIMARY,
     )
     port_entry.pack(anchor="w", pady=(0, 12))
+    _bind_text_context_menu(port_entry)
 
     # DC-IP mappings
     ctk.CTkLabel(
@@ -409,6 +445,7 @@ def _edit_config_dialog():
     )
     dc_textbox.pack(anchor="w", pady=(0, 12))
     dc_textbox.insert("1.0", "\n".join(cfg.get("dc_ip", DEFAULT_CONFIG["dc_ip"])))
+    _bind_text_context_menu(dc_textbox)
 
     upstream_mode = _normalize_upstream_mode(
         cfg.get("upstream_mode", DEFAULT_CONFIG["upstream_mode"])
@@ -476,6 +513,7 @@ def _edit_config_dialog():
         text_color=TEXT_PRIMARY,
     )
     relay_url_entry.pack(anchor="w", pady=(0, 10))
+    _bind_text_context_menu(relay_url_entry)
 
     ctk.CTkLabel(
         relay_frame,
@@ -498,6 +536,7 @@ def _edit_config_dialog():
         text_color=TEXT_PRIMARY,
     )
     relay_token_entry.pack(anchor="w", pady=(0, 8))
+    _bind_text_context_menu(relay_token_entry)
 
     direct_ws_timeout_frame = ctk.CTkFrame(frame, fg_color="transparent")
     ctk.CTkLabel(
@@ -528,6 +567,7 @@ def _edit_config_dialog():
         text_color=TEXT_PRIMARY,
     )
     direct_ws_timeout_entry.pack(anchor="w", pady=(0, 12))
+    _bind_text_context_menu(direct_ws_timeout_entry)
 
     upstream_summary_var = ctk.StringVar(
         value=_upstream_mode_summary(upstream_mode, relay_url_var.get())
