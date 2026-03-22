@@ -21,6 +21,9 @@ object PythonProxyBridge {
             config.relayUrl,
             config.relayToken,
             config.directWsTimeoutSeconds,
+            config.logMaxMb,
+            config.bufferKb,
+            config.poolSize,
             config.verbose,
         ).toString()
     }

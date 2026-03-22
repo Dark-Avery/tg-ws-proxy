@@ -44,6 +44,9 @@ def start_proxy(app_dir: str, host: str, port: int,
                 dc_ip_list: Iterable[object], upstream_mode: str = "telegram_ws_direct",
                 relay_url: str = "", relay_token: str = "",
                 direct_ws_timeout_seconds: float = 10.0,
+                log_max_mb: float = 5.0,
+                buf_kb: int = 256,
+                pool_size: int = 4,
                 verbose: bool = False) -> str:
     global _RUNTIME, _LAST_ERROR
 
@@ -62,7 +65,7 @@ def start_proxy(app_dir: str, host: str, port: int,
             on_error=_remember_error,
         )
         runtime.reset_log_file()
-        runtime.setup_logging(verbose=verbose)
+        runtime.setup_logging(verbose=verbose, log_max_mb=float(log_max_mb))
 
         config = {
             "host": host,
@@ -72,6 +75,9 @@ def start_proxy(app_dir: str, host: str, port: int,
             "relay_url": str(relay_url or ""),
             "relay_token": str(relay_token or ""),
             "direct_ws_timeout_seconds": float(direct_ws_timeout_seconds),
+            "log_max_mb": float(log_max_mb),
+            "buf_kb": int(buf_kb),
+            "pool_size": int(pool_size),
             "verbose": bool(verbose),
         }
         runtime.save_config(config)

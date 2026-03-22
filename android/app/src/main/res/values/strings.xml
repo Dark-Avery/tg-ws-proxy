@@ -24,6 +24,9 @@
     <string name="relay_url_hint">Relay URL</string>
     <string name="relay_token_hint">Relay token</string>
     <string name="direct_ws_timeout_hint">Direct WS timeout before relay (sec)</string>
+    <string name="log_max_mb_hint">Max log size before rotation (MB)</string>
+    <string name="buffer_kb_hint">Socket buffer size (KB)</string>
+    <string name="pool_size_hint">WS pool size per DC</string>
     <string name="upstream_status_label">Upstream route</string>
     <string name="upstream_mode_direct">Direct Telegram WS</string>
     <string name="upstream_mode_auto">Auto: direct -> relay -> TCP</string>

@@ -129,6 +129,9 @@ class MainActivity : AppCompatActivity() {
         binding.relayUrlInput.setText(config.relayUrlText)
         binding.relayTokenInput.setText(config.relayTokenText)
         binding.directWsTimeoutInput.setText(config.directWsTimeoutText)
+        binding.logMaxMbInput.setText(config.logMaxMbText)
+        binding.bufferKbInput.setText(config.bufferKbText)
+        binding.poolSizeInput.setText(config.poolSizeText)
         binding.verboseSwitch.isChecked = config.verbose
         renderUpstreamConfigState(
             config.upstreamMode,
@@ -145,6 +148,9 @@ class MainActivity : AppCompatActivity() {
             relayUrlText = binding.relayUrlInput.text?.toString().orEmpty(),
             relayTokenText = binding.relayTokenInput.text?.toString().orEmpty(),
             directWsTimeoutText = binding.directWsTimeoutInput.text?.toString().orEmpty(),
+            logMaxMbText = binding.logMaxMbInput.text?.toString().orEmpty(),
+            bufferKbText = binding.bufferKbInput.text?.toString().orEmpty(),
+            poolSizeText = binding.poolSizeInput.text?.toString().orEmpty(),
             verbose = binding.verboseSwitch.isChecked,
         )
     }

@@ -87,8 +87,9 @@ class AndroidProxyBridgeTests(unittest.TestCase):
             def reset_log_file(self):
                 captured["reset_log_file"] = True
 
-            def setup_logging(self, verbose=False):
+            def setup_logging(self, verbose=False, log_max_mb=5):
                 captured["verbose"] = verbose
+                captured["log_max_mb"] = log_max_mb
 
             def save_config(self, config):
                 captured["config"] = dict(config)
@@ -115,6 +116,9 @@ class AndroidProxyBridgeTests(unittest.TestCase):
                 "wss://relay.example.com/connect",
                 "secret",
                 3.5,
+                7.0,
+                512,
+                6,
                 True,
             )
         finally:
@@ -128,6 +132,10 @@ class AndroidProxyBridgeTests(unittest.TestCase):
         )
         self.assertEqual(captured["config"]["relay_token"], "secret")
         self.assertEqual(captured["config"]["direct_ws_timeout_seconds"], 3.5)
+        self.assertEqual(captured["config"]["log_max_mb"], 7.0)
+        self.assertEqual(captured["config"]["buf_kb"], 512)
+        self.assertEqual(captured["config"]["pool_size"], 6)
+        self.assertEqual(captured["log_max_mb"], 7.0)
         self.assertTrue(captured["verbose"])
 
 
