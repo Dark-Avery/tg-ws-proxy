@@ -17,20 +17,20 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: "pip"
 
       - name: Install dependencies
-        run: pip install ".[win10]"
+        run: pip install .
 
       - name: Install pyinstaller
         run: pip install "pyinstaller==6.13.0"
@@ -42,47 +42,49 @@ jobs:
         run: mv dist/TgWsProxy.exe dist/TgWsProxy_windows.exe
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: TgWsProxy
-          path: |
-            dist/TgWsProxy_windows.exe
+          path: dist/TgWsProxy_windows.exe
 
   build-win7:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            suffix: 64bit
+          - arch: x86
+            suffix: 32bit
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Setup Python 3.8 (last version supporting Win7)
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.8"
+          architecture: ${{ matrix.arch }}
           cache: "pip"
+          
+      - name: Install dependencies & pyinstaller
+        run: pip install . "pyinstaller==5.13.2"
 
-      - name: Install dependencies (Win7-compatible)
-        run: pip install ".[win7]"
-
-      - name: Install pyinstaller
-        run: pip install "pyinstaller==5.13.2"
-
-      - name: Build EXE with PyInstaller (Win7)
+      - name: Build EXE with PyInstaller
         run: pyinstaller packaging/windows.spec --noconfirm
 
       - name: Rename artifact
-        run: mv dist/TgWsProxy.exe dist/TgWsProxy_windows_7.exe
+        run: mv dist/TgWsProxy.exe dist/TgWsProxy_windows_7_${{ matrix.suffix }}.exe
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: TgWsProxy-win7
-          path: dist/TgWsProxy_windows_7.exe
+          name: TgWsProxy-win7-${{ matrix.suffix }}
+          path: dist/TgWsProxy_windows_7_${{ matrix.suffix }}.exe
 
   build-macos:
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install universal2 Python
         run: |
@@ -142,7 +144,7 @@ jobs:
             -w wheelhouse/universal2
 
           python3.12 -m pip install --no-deps wheelhouse/universal2/*.whl
-          python3.12 -m pip install ".[macos]"
+          python3.12 -m pip install .
           python3.12 -m pip install pyinstaller==6.13.0
 
       - name: Create macOS icon from ICO
@@ -217,7 +219,7 @@ jobs:
           rm -rf "$DMG_TEMP"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: TgWsProxy-macOS
           path: dist/TgWsProxy_macos_universal.dmg
@@ -226,7 +228,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install system dependencies
         run: |
@@ -244,7 +246,7 @@ jobs:
       - name: Install dependencies
         run: |
           .venv/bin/pip install --upgrade pip
-          .venv/bin/pip install ".[linux]"
+          .venv/bin/pip install .
           .venv/bin/pip install "pyinstaller==6.13.0"
 
       - name: Build binary with PyInstaller
@@ -309,7 +311,7 @@ jobs:
             "dist/TgWsProxy_linux_amd64.deb"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: TgWsProxy-linux
           path: |
@@ -389,33 +391,15 @@ jobs:
           path: android/app/build/outputs/apk/release/${{ env.ANDROID_APK_NAME }}
 
   release:
-    needs: [build, build-win7, build-macos, build-linux, build-android]
+    needs: [build-windows, build-win7, build-macos, build-linux, build-android]
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.make_release == 'true' }}
     steps:
-      - name: Download main build
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
-          name: TgWsProxy
+          pattern: TgWsProxy*
           path: dist
-
-      - name: Download Win7 build
-        uses: actions/download-artifact@v4
-        with:
-          name: TgWsProxy-win7
-          path: dist
-
-      - name: Download macOS build
-        uses: actions/download-artifact@v4
-        with:
-          name: TgWsProxy-macOS
-          path: dist
-
-      - name: Download Linux build
-        uses: actions/download-artifact@v4
-        with:
-          name: TgWsProxy-linux
-          path: dist
+          merge-multiple: true
 
       - name: Download Android build
         uses: actions/download-artifact@v4
@@ -432,7 +416,8 @@ jobs:
             ## TG WS Proxy ${{ github.event.inputs.version }}
           files: |
             dist/TgWsProxy_windows.exe
-            dist/TgWsProxy_windows_7.exe
+            dist/TgWsProxy_windows_7_64bit.exe
+            dist/TgWsProxy_windows_7_32bit.exe
             dist/TgWsProxy_macos_universal.dmg
             dist/TgWsProxy_linux_amd64
             dist/TgWsProxy_linux_amd64.deb

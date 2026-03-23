@@ -56,6 +56,21 @@ Telegram Desktop → SOCKS5 (127.0.0.1:1080) → TG WS Proxy → WSS → Telegra
 
 Для Debian/Ubuntu скачайте со [страницы релизов](https://github.com/Flowseal/tg-ws-proxy/releases) пакет **`TgWsProxy_linux_amd64.deb`**.
 
+Для Arch и Arch-Based дистрибутивов подготовлены пакеты в AUR: [tg-ws-proxy-bin](https://aur.archlinux.org/packages/tg-ws-proxy-bin), [tg-ws-proxy-git](https://aur.archlinux.org/packages/tg-ws-proxy-git), [tg-ws-proxy-cli](https://aur.archlinux.org/packages/tg-ws-proxy-cli)
+
+```shell
+# Установка без AUR-helper
+git clone https://aur.archlinux.org/tg-ws-proxy-bin.git
+cd tg-ws-proxy-bin
+makepkg -si
+
+# При помощи AUR-helper
+paru -S tg-ws-proxy-bin
+
+# Если вы установили -cli пакет, то запуск осуществляется через systemctl, где 8888 это номер порта прокси:
+sudo systemctl start tg-ws-proxy-cli@8888
+```
+
 Для остальных дистрибутивов можно использовать **`TgWsProxy_linux_amd64`** (бинарный файл для x86_64).
 
 ```bash
@@ -93,31 +108,24 @@ pip install -e .
 tg-ws-proxy
 ```
 
-### Windows 10+
+### Windows 7/10+
 
 ```bash
-pip install -e ".[win10]"
-tg-ws-proxy-tray-win
-```
-
-### Windows 7
-
-```bash
-pip install -e ".[win7]"
+pip install -e .
 tg-ws-proxy-tray-win
 ```
 
 ### macOS
 
 ```bash
-pip install -e ".[macos]"
+pip install -e .
 tg-ws-proxy-tray-macos
 ```
 
 ### Linux
 
 ```bash
-pip install -e ".[linux]"
+pip install -e .
 tg-ws-proxy-tray-linux
 ```
 
@@ -262,7 +270,8 @@ Tray-приложение хранит данные в:
 Минимально поддерживаемые версии ОС для текущих бинарных сборок:
 
 - Windows 10+ для `TgWsProxy_windows.exe`
-- Windows 7 для `TgWsProxy_windows_7.exe`
+- Windows 7 (x64) для `TgWsProxy_windows_7_64bit.exe`
+- Windows 7 (x32) для `TgWsProxy_windows_7_32bit.exe`
 - Intel macOS 10.15+
 - Apple Silicon macOS 11.0+
 - Linux x86_64 (требуется AppIndicator для системного трея)
