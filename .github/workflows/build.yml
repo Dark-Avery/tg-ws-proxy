@@ -353,7 +353,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      ANDROID_APK_NAME: tg-ws-proxy-android-${{ github.event.inputs.version }}.apk
+      ANDROID_APK_STANDARD_NAME: tg-ws-proxy-android-${{ github.event.inputs.version }}.apk
+      ANDROID_APK_LEGACY32_NAME: tg-ws-proxy-android-${{ github.event.inputs.version }}-legacy32.apk
     defaults:
       run:
         working-directory: android
@@ -401,7 +402,7 @@ jobs:
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/android-release.keystore"
           test -s "$RUNNER_TEMP/android-release.keystore"
 
-      - name: Build Android release APK
+      - name: Build Android release APKs
         env:
           LOCAL_CHAQUOPY_REPO: ${{ github.workspace }}/android/.m2-chaquopy-ci
           ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/android-release.keystore
@@ -410,16 +411,23 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x gradlew build-local-debug.sh
-          ./build-local-debug.sh assembleRelease
+          ./build-local-debug.sh assembleStandardRelease
+          ./build-local-debug.sh assembleLegacy32Release
 
-      - name: Rename APK
-        run: cp app/build/outputs/apk/release/app-release.apk "app/build/outputs/apk/release/$ANDROID_APK_NAME"
+      - name: Rename APKs
+        run: |
+          cp app/build/outputs/apk/standard/release/app-standard-release.apk \
+            "app/build/outputs/apk/standard/release/$ANDROID_APK_STANDARD_NAME"
+          cp app/build/outputs/apk/legacy32/release/app-legacy32-release.apk \
+            "app/build/outputs/apk/legacy32/release/$ANDROID_APK_LEGACY32_NAME"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: TgWsProxy-android-release
-          path: android/app/build/outputs/apk/release/${{ env.ANDROID_APK_NAME }}
+          path: |
+            android/app/build/outputs/apk/standard/release/${{ env.ANDROID_APK_STANDARD_NAME }}
+            android/app/build/outputs/apk/legacy32/release/${{ env.ANDROID_APK_LEGACY32_NAME }}
 
   release:
     needs: [build, build-win7, build-macos, build-linux, build-android, build-relay]
@@ -476,6 +484,7 @@ jobs:
             dist/TgWsProxy_linux_amd64
             dist/TgWsProxy_linux_amd64.deb
             dist/tg-ws-proxy-android-${{ github.event.inputs.version }}.apk
+            dist/tg-ws-proxy-android-${{ github.event.inputs.version }}-legacy32.apk
             dist/relay/*
           draft: false
           prerelease: false
