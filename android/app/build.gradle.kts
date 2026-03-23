@@ -70,9 +70,22 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
 
-        ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+    flavorDimensions += "runtime"
+    productFlavors {
+        create("standard") {
+            dimension = "runtime"
+            ndk {
+                abiFilters += listOf("arm64-v8a", "x86_64")
+            }
+        }
+        create("legacy32") {
+            dimension = "runtime"
+            versionNameSuffix = "-legacy32"
+            ndk {
+                abiFilters += listOf("armeabi-v7a")
+            }
         }
     }
 
@@ -115,8 +128,13 @@ android {
 }
 
 chaquopy {
-    defaultConfig {
-        version = "3.12"
+    productFlavors {
+        getByName("standard") {
+            version = "3.12"
+        }
+        getByName("legacy32") {
+            version = "3.11"
+        }
     }
     sourceSets {
         getByName("main") {

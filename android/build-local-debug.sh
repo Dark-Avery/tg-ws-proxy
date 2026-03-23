@@ -43,9 +43,25 @@ fi
 
 ATTEMPTS="${ATTEMPTS:-5}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-15}"
-TASK="${1:-assembleDebug}"
+TASK="${1:-assembleStandardDebug}"
 LOCAL_CHAQUOPY_REPO="${LOCAL_CHAQUOPY_REPO:-$ROOT_DIR/.m2-chaquopy}"
 CHAQUOPY_MAVEN_BASE="${CHAQUOPY_MAVEN_BASE:-https://repo.maven.apache.org/maven2}"
+
+task_uses_legacy32() {
+  [[ "$TASK" =~ [Ll]egacy32 ]]
+}
+
+task_uses_standard() {
+  if [[ "$TASK" =~ [Ss]tandard ]]; then
+    return 0
+  fi
+
+  if task_uses_legacy32; then
+    return 1
+  fi
+
+  return 0
+}
 
 prefetch_artifact() {
   local relative_path="$1"
@@ -76,14 +92,29 @@ prefetch_chaquopy_runtime() {
     "com/chaquo/python/runtime/chaquopy_java/17.0.0/chaquopy_java-17.0.0.pom"
     "com/chaquo/python/runtime/chaquopy_java/17.0.0/chaquopy_java-17.0.0.jar"
     "com/chaquo/python/runtime/libchaquopy_java/17.0.0/libchaquopy_java-17.0.0.pom"
-    "com/chaquo/python/runtime/libchaquopy_java/17.0.0/libchaquopy_java-17.0.0-3.12-arm64-v8a.so"
-    "com/chaquo/python/runtime/libchaquopy_java/17.0.0/libchaquopy_java-17.0.0-3.12-x86_64.so"
-    "com/chaquo/python/target/3.12.12-0/target-3.12.12-0.pom"
-    "com/chaquo/python/target/3.12.12-0/target-3.12.12-0-arm64-v8a.zip"
-    "com/chaquo/python/target/3.12.12-0/target-3.12.12-0-stdlib-pyc.zip"
-    "com/chaquo/python/target/3.12.12-0/target-3.12.12-0-stdlib.zip"
-    "com/chaquo/python/target/3.12.12-0/target-3.12.12-0-x86_64.zip"
   )
+
+  if task_uses_standard; then
+    artifacts+=(
+      "com/chaquo/python/runtime/libchaquopy_java/17.0.0/libchaquopy_java-17.0.0-3.12-arm64-v8a.so"
+      "com/chaquo/python/runtime/libchaquopy_java/17.0.0/libchaquopy_java-17.0.0-3.12-x86_64.so"
+      "com/chaquo/python/target/3.12.12-0/target-3.12.12-0.pom"
+      "com/chaquo/python/target/3.12.12-0/target-3.12.12-0-arm64-v8a.zip"
+      "com/chaquo/python/target/3.12.12-0/target-3.12.12-0-stdlib-pyc.zip"
+      "com/chaquo/python/target/3.12.12-0/target-3.12.12-0-stdlib.zip"
+      "com/chaquo/python/target/3.12.12-0/target-3.12.12-0-x86_64.zip"
+    )
+  fi
+
+  if task_uses_legacy32; then
+    artifacts+=(
+      "com/chaquo/python/runtime/libchaquopy_java/17.0.0/libchaquopy_java-17.0.0-3.11-armeabi-v7a.so"
+      "com/chaquo/python/target/3.11.10-0/target-3.11.10-0.pom"
+      "com/chaquo/python/target/3.11.10-0/target-3.11.10-0-armeabi-v7a.zip"
+      "com/chaquo/python/target/3.11.10-0/target-3.11.10-0-stdlib-pyc.zip"
+      "com/chaquo/python/target/3.11.10-0/target-3.11.10-0-stdlib.zip"
+    )
+  fi
 
   for artifact in "${artifacts[@]}"; do
     prefetch_artifact "$artifact"
