@@ -181,8 +181,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshUpdateStatus(checkNow: Boolean) {
         lifecycleScope.launch {
-            val status = withContext(Dispatchers.IO) {
-                PythonProxyBridge.getUpdateStatus(this@MainActivity, checkNow)
+            val status = runCatching {
+                withContext(Dispatchers.IO) {
+                    PythonProxyBridge.getUpdateStatus(this@MainActivity, checkNow)
+                }
+            }.getOrElse { exc ->
+                ProxyUpdateStatus(
+                    currentVersion = "unknown",
+                    error = exc.message ?: exc.javaClass.simpleName,
+                )
             }
             currentUpdateStatus = status
             renderUpdateStatus(status, binding.checkUpdatesSwitch.isChecked)
