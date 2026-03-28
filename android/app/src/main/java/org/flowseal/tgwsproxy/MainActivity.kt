@@ -77,7 +77,12 @@ class MainActivity : AppCompatActivity() {
 
         val config = settingsStore.load()
         renderConfig(config)
-        refreshUpdateStatus(checkNow = config.checkUpdates)
+        if (config.checkUpdates) {
+            refreshUpdateStatus(checkNow = true)
+        } else {
+            currentUpdateStatus = null
+            renderUpdateStatus(null, false)
+        }
         requestNotificationPermissionIfNeeded()
         observeServiceState()
         renderSystemStatus()
@@ -102,7 +107,12 @@ class MainActivity : AppCompatActivity() {
         if (showMessage) {
             Snackbar.make(binding.root, R.string.settings_saved, Snackbar.LENGTH_SHORT).show()
         }
-        refreshUpdateStatus(checkNow = config.checkUpdates)
+        if (config.checkUpdates) {
+            refreshUpdateStatus(checkNow = true)
+        } else {
+            currentUpdateStatus = null
+            renderUpdateStatus(null, false)
+        }
         return config
     }
 
@@ -197,7 +207,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderUpdateStatus(status: ProxyUpdateStatus?, checkUpdatesEnabled: Boolean) {
-        val currentVersion = status?.currentVersion ?: "unknown"
+        val currentVersion = status?.currentVersion?.takeIf { it.isNotBlank() } ?: currentAppVersionName()
         binding.currentVersionValue.text = getString(
             R.string.updates_current_version_format,
             currentVersion,
@@ -226,6 +236,13 @@ class MainActivity : AppCompatActivity() {
                 getString(R.string.updates_status_latest, status.currentVersion)
             }
         }
+    }
+
+    private fun currentAppVersionName(): String {
+        return runCatching {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(packageName, 0).versionName
+        }.getOrNull().orEmpty().ifBlank { "unknown" }
     }
 
     private fun observeServiceState() {

@@ -11,7 +11,7 @@ data class ProxyConfig(
     val logMaxMbText: String = DEFAULT_LOG_MAX_MB.toString(),
     val bufferKbText: String = DEFAULT_BUFFER_KB.toString(),
     val poolSizeText: String = DEFAULT_POOL_SIZE.toString(),
-    val checkUpdates: Boolean = true,
+    val checkUpdates: Boolean = false,
     val verbose: Boolean = false,
 ) {
     fun validate(): ValidationResult {
