@@ -59,6 +59,9 @@ val stagePythonSources by tasks.registering(Sync::class) {
     from(rootProject.projectDir.resolve("../proxy")) {
         into("proxy")
     }
+    from(rootProject.projectDir.resolve("../utils")) {
+        into("utils")
+    }
     into(stagedPythonSourcesDir)
 }
 val releaseSigningRequested = gradle.startParameter.taskNames.any {

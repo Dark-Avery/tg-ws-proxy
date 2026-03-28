@@ -222,6 +222,9 @@ class MainActivity : AppCompatActivity() {
             !status.error.isNullOrBlank() -> {
                 getString(R.string.updates_status_error, status.error)
             }
+            !status.checked -> {
+                getString(R.string.updates_status_idle)
+            }
             status.hasUpdate && !status.latestVersion.isNullOrBlank() -> {
                 getString(
                     R.string.updates_status_available,
