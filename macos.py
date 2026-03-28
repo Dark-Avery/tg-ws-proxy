@@ -30,6 +30,8 @@ except ImportError:
 
 import proxy.tg_ws_proxy as tg_ws_proxy
 from proxy.app_runtime import ProxyAppRuntime
+from proxy import __version__
+from utils.default_config import default_tray_config
 
 APP_NAME = "TgWsProxy"
 APP_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
@@ -39,15 +41,7 @@ FIRST_RUN_MARKER = APP_DIR / ".first_run_done"
 IPV6_WARN_MARKER = APP_DIR / ".ipv6_warned"
 MENUBAR_ICON_PATH = APP_DIR / "menubar_icon.png"
 
-DEFAULT_CONFIG = {
-    "port": 1080,
-    "host": "127.0.0.1",
-    "dc_ip": ["2:149.154.167.220", "4:149.154.167.220"],
-    "verbose": False,
-    "log_max_mb": 5,
-    "buf_kb": 256,
-    "pool_size": 4,
-}
+DEFAULT_CONFIG = default_tray_config()
 
 _app: Optional[object] = None
 _config: dict = {}
@@ -264,8 +258,9 @@ def restart_proxy():
 # Menu callbacks
 
 def _on_open_in_telegram(_=None):
+    host = _config.get("host", DEFAULT_CONFIG["host"])
     port = _config.get("port", DEFAULT_CONFIG["port"])
-    url = f"tg://socks?server=127.0.0.1&port={port}"
+    url = f"tg://socks?server={host}&port={port}"
     log.info("Opening %s", url)
     try:
         result = subprocess.call(['open', url])
@@ -331,6 +326,55 @@ def _osascript_input(prompt: str, default: str,
 
 def _on_edit_config(_=None):
     threading.Thread(target=_edit_config_dialog, daemon=True).start()
+
+
+def _check_updates_menu_title() -> str:
+    on = bool(_config.get("check_updates", True))
+    return (
+        "✓ Проверять обновления при запуске"
+        if on
+        else "Проверять обновления при запуске (выкл)"
+    )
+
+
+def _toggle_check_updates(_=None):
+    global _config
+    _config["check_updates"] = not bool(_config.get("check_updates", True))
+    save_config(_config)
+    if _app is not None:
+        _app._check_updates_item.title = _check_updates_menu_title()
+
+
+def _on_open_release_page(_=None):
+    from utils.update_check import RELEASES_PAGE_URL
+    webbrowser.open(RELEASES_PAGE_URL)
+
+
+def _maybe_notify_update_async():
+    def _work():
+        time.sleep(1.5)
+        if _exiting:
+            return
+        if not _config.get("check_updates", True):
+            return
+        try:
+            from utils.update_check import RELEASES_PAGE_URL, get_status, run_check
+            run_check(__version__)
+            st = get_status()
+            if not st.get("has_update"):
+                return
+            url = (st.get("html_url") or "").strip() or RELEASES_PAGE_URL
+            ver = st.get("latest") or "?"
+            if _ask_yes_no(
+                f"Доступна новая версия: {ver}\n\n"
+                f"Открыть страницу релиза в браузере?",
+                "TG WS Proxy — обновление",
+            ):
+                webbrowser.open(url)
+        except Exception as exc:
+            log.debug("Update check failed: %s", exc)
+
+    threading.Thread(target=_work, daemon=True, name="update-check").start()
 
 
 # Settings via native macOS dialogs
@@ -523,6 +567,15 @@ class TgWsProxyApp(_TgWsProxyAppBase):
         self._logs_item = rumps.MenuItem(
             "Открыть логи",
             callback=_on_open_logs)
+        self._release_page_item = rumps.MenuItem(
+            "Страница релиза на GitHub…",
+            callback=_on_open_release_page)
+        self._check_updates_item = rumps.MenuItem(
+            _check_updates_menu_title(),
+            callback=_toggle_check_updates)
+        self._version_item = rumps.MenuItem(
+            f"Версия {__version__}",
+            callback=lambda _: None)
 
         super().__init__(
             "TG WS Proxy",
@@ -535,6 +588,11 @@ class TgWsProxyApp(_TgWsProxyAppBase):
                 self._restart_item,
                 self._settings_item,
                 self._logs_item,
+                None,
+                self._release_page_item,
+                self._check_updates_item,
+                None,
+                self._version_item,
             ])
 
     def update_menu_title(self):
@@ -552,7 +610,7 @@ def run_menubar():
 
     setup_logging(_config.get("verbose", False),
                   log_max_mb=_config.get("log_max_mb", DEFAULT_CONFIG["log_max_mb"]))
-    log.info("TG WS Proxy menubar app starting")
+    log.info("TG WS Proxy версия %s, menubar app starting", __version__)
     log.info("Config: %s", _config)
     log.info("Log file: %s", LOG_FILE)
 
@@ -567,6 +625,9 @@ def run_menubar():
         return
 
     start_proxy()
+
+    _maybe_notify_update_async()
+
     _show_first_run()
     _check_ipv6_warning()
 

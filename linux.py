@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import threading
+import webbrowser
 import time
 from pathlib import Path
 from typing import Optional
@@ -19,6 +20,23 @@ from PIL import Image, ImageDraw, ImageFont
 
 import proxy.tg_ws_proxy as tg_ws_proxy
 from proxy.app_runtime import ProxyAppRuntime
+from proxy import __version__
+from utils.default_config import default_tray_config
+from ui.ctk_tray_ui import (
+    install_tray_config_buttons,
+    install_tray_config_form,
+    populate_first_run_window,
+    tray_settings_scroll_and_footer,
+    validate_config_form,
+)
+from ui.ctk_theme import (
+    CONFIG_DIALOG_FRAME_PAD,
+    CONFIG_DIALOG_SIZE,
+    FIRST_RUN_SIZE,
+    create_ctk_root,
+    ctk_theme_for_platform,
+    main_content_frame,
+)
 
 APP_NAME = "TgWsProxy"
 APP_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / APP_NAME
@@ -28,15 +46,7 @@ FIRST_RUN_MARKER = APP_DIR / ".first_run_done"
 IPV6_WARN_MARKER = APP_DIR / ".ipv6_warned"
 
 
-DEFAULT_CONFIG = {
-    "port": 1080,
-    "host": "127.0.0.1",
-    "dc_ip": ["2:149.154.167.220", "4:149.154.167.220"],
-    "verbose": False,
-    "log_max_mb": 5,
-    "buf_kb": 256,
-    "pool_size": 4,
-}
+DEFAULT_CONFIG = default_tray_config()
 
 
 _tray_icon: Optional[object] = None
@@ -225,9 +235,52 @@ def _show_info(text: str, title: str = "TG WS Proxy"):
     root.destroy()
 
 
+def _ask_yes_no_dialog(text: str, title: str = "TG WS Proxy") -> bool:
+    import tkinter as _tk
+    from tkinter import messagebox as _mb
+
+    root = _tk.Tk()
+    root.withdraw()
+    try:
+        root.attributes("-topmost", True)
+    except Exception:
+        pass
+    r = _mb.askyesno(title, text, parent=root)
+    root.destroy()
+    return bool(r)
+
+
+def _maybe_notify_update_async():
+    def _work():
+        time.sleep(1.5)
+        if _exiting:
+            return
+        if not _config.get("check_updates", True):
+            return
+        try:
+            from utils.update_check import RELEASES_PAGE_URL, get_status, run_check
+            run_check(__version__)
+            st = get_status()
+            if not st.get("has_update"):
+                return
+            url = (st.get("html_url") or "").strip() or RELEASES_PAGE_URL
+            ver = st.get("latest") or "?"
+            text = (
+                f"Доступна новая версия: {ver}\n\n"
+                f"Открыть страницу релиза в браузере?"
+            )
+            if _ask_yes_no_dialog(text, "TG WS Proxy — обновление"):
+                webbrowser.open(url)
+        except Exception as exc:
+            log.debug("Update check failed: %s", exc)
+
+    threading.Thread(target=_work, daemon=True, name="update-check").start()
+
+
 def _on_open_in_telegram(icon=None, item=None):
+    host = _config.get("host", DEFAULT_CONFIG["host"])
     port = _config.get("port", DEFAULT_CONFIG["port"])
-    url = f"tg://socks?server=127.0.0.1&port={port}"
+    url = f"tg://socks?server={host}&port={port}"
     log.info("Copying %s", url)
 
     try:
@@ -256,192 +309,36 @@ def _edit_config_dialog():
 
     cfg = dict(_config)
 
-    ctk.set_appearance_mode("light")
-    ctk.set_default_color_theme("blue")
+    theme = ctk_theme_for_platform()
+    w, h = CONFIG_DIALOG_SIZE
 
-    root = ctk.CTk()
-    root.title("TG WS Proxy — Настройки")
-    root.resizable(False, False)
-    root.attributes("-topmost", True)
-
-    icon_img = _load_icon()
-    if icon_img:
-        from PIL import ImageTk
-
-        _photo = ImageTk.PhotoImage(icon_img.resize((64, 64)))
-        root.iconphoto(False, _photo)
-
-    TG_BLUE = "#3390ec"
-    TG_BLUE_HOVER = "#2b7cd4"
-    BG = "#ffffff"
-    FIELD_BG = "#f0f2f5"
-    FIELD_BORDER = "#d6d9dc"
-    TEXT_PRIMARY = "#000000"
-    TEXT_SECONDARY = "#707579"
-    FONT_FAMILY = "Sans"
-
-    w, h = 420, 540
-    sw = root.winfo_screenwidth()
-    sh = root.winfo_screenheight()
-    root.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
-    root.configure(fg_color=BG)
-
-    frame = ctk.CTkFrame(root, fg_color=BG, corner_radius=0)
-    frame.pack(fill="both", expand=True, padx=24, pady=20)
-
-    # Host
-    ctk.CTkLabel(
-        frame,
-        text="IP-адрес прокси",
-        font=(FONT_FAMILY, 13),
-        text_color=TEXT_PRIMARY,
-        anchor="w",
-    ).pack(anchor="w", pady=(0, 4))
-    host_var = ctk.StringVar(value=cfg.get("host", "127.0.0.1"))
-    host_entry = ctk.CTkEntry(
-        frame,
-        textvariable=host_var,
-        width=200,
-        height=36,
-        font=(FONT_FAMILY, 13),
-        corner_radius=10,
-        fg_color=FIELD_BG,
-        border_color=FIELD_BORDER,
-        border_width=1,
-        text_color=TEXT_PRIMARY,
+    root = create_ctk_root(
+        ctk,
+        title="TG WS Proxy — Настройки",
+        width=w,
+        height=h,
+        theme=theme,
+        after_create=_apply_linux_ctk_window_icon,
     )
-    host_entry.pack(anchor="w", pady=(0, 12))
 
-    # Port
-    ctk.CTkLabel(
-        frame,
-        text="Порт прокси",
-        font=(FONT_FAMILY, 13),
-        text_color=TEXT_PRIMARY,
-        anchor="w",
-    ).pack(anchor="w", pady=(0, 4))
-    port_var = ctk.StringVar(value=str(cfg.get("port", 1080)))
-    port_entry = ctk.CTkEntry(
-        frame,
-        textvariable=port_var,
-        width=120,
-        height=36,
-        font=(FONT_FAMILY, 13),
-        corner_radius=10,
-        fg_color=FIELD_BG,
-        border_color=FIELD_BORDER,
-        border_width=1,
-        text_color=TEXT_PRIMARY,
+    fpx, fpy = CONFIG_DIALOG_FRAME_PAD
+    frame = main_content_frame(ctk, root, theme, padx=fpx, pady=fpy)
+
+    scroll, footer = tray_settings_scroll_and_footer(ctk, frame, theme)
+
+    widgets = install_tray_config_form(
+        ctk, scroll, theme, cfg, DEFAULT_CONFIG,
+        show_autostart=False,
     )
-    port_entry.pack(anchor="w", pady=(0, 12))
-
-    # DC-IP mappings
-    ctk.CTkLabel(
-        frame,
-        text="DC → IP маппинги (по одному на строку, формат DC:IP)",
-        font=(FONT_FAMILY, 13),
-        text_color=TEXT_PRIMARY,
-        anchor="w",
-    ).pack(anchor="w", pady=(0, 4))
-    dc_textbox = ctk.CTkTextbox(
-        frame,
-        width=370,
-        height=120,
-        font=("Monospace", 12),
-        corner_radius=10,
-        fg_color=FIELD_BG,
-        border_color=FIELD_BORDER,
-        border_width=1,
-        text_color=TEXT_PRIMARY,
-    )
-    dc_textbox.pack(anchor="w", pady=(0, 12))
-    dc_textbox.insert("1.0", "\n".join(cfg.get("dc_ip", DEFAULT_CONFIG["dc_ip"])))
-
-    # Verbose
-    verbose_var = ctk.BooleanVar(value=cfg.get("verbose", False))
-    ctk.CTkCheckBox(
-        frame,
-        text="Подробное логирование (verbose)",
-        variable=verbose_var,
-        font=(FONT_FAMILY, 13),
-        text_color=TEXT_PRIMARY,
-        fg_color=TG_BLUE,
-        hover_color=TG_BLUE_HOVER,
-        corner_radius=6,
-        border_width=2,
-        border_color=FIELD_BORDER,
-    ).pack(anchor="w", pady=(0, 8))
-
-    # Advanced: buf_kb, pool_size, log_max_mb
-    adv_frame = ctk.CTkFrame(frame, fg_color="transparent")
-    adv_frame.pack(anchor="w", fill="x", pady=(4, 8))
-
-    for col, (lbl, key, w_) in enumerate([
-        ("Буфер (KB, 256 default)", "buf_kb", 120),
-        ("WS пулов (4 default)", "pool_size", 120),
-        ("Log size (MB, 5 def)", "log_max_mb", 120),
-    ]):
-        col_frame = ctk.CTkFrame(adv_frame, fg_color="transparent")
-        col_frame.pack(side="left", padx=(0, 10))
-        ctk.CTkLabel(col_frame, text=lbl, font=(FONT_FAMILY, 11),
-                     text_color=TEXT_SECONDARY, anchor="w").pack(anchor="w")
-        ctk.CTkEntry(col_frame, width=w_, height=30, font=(FONT_FAMILY, 12),
-                     corner_radius=8, fg_color=FIELD_BG,
-                     border_color=FIELD_BORDER, border_width=1,
-                     text_color=TEXT_PRIMARY,
-                     textvariable=ctk.StringVar(
-                         value=str(cfg.get(key, DEFAULT_CONFIG[key]))
-                     )).pack(anchor="w")
-
-    _adv_entries = list(adv_frame.winfo_children())
-    _adv_keys = ["buf_kb", "pool_size", "log_max_mb"]
 
     def on_save():
-        import socket as _sock
-
-        host_val = host_var.get().strip()
-        try:
-            _sock.inet_aton(host_val)
-        except OSError:
-            _show_error("Некорректный IP-адрес.")
+        merged = validate_config_form(
+            widgets, DEFAULT_CONFIG, include_autostart=False)
+        if isinstance(merged, str):
+            _show_error(merged)
             return
 
-        try:
-            port_val = int(port_var.get().strip())
-            if not (1 <= port_val <= 65535):
-                raise ValueError
-        except ValueError:
-            _show_error("Порт должен быть числом 1-65535")
-            return
-
-        lines = [
-            l.strip()
-            for l in dc_textbox.get("1.0", "end").strip().splitlines()
-            if l.strip()
-        ]
-        try:
-            tg_ws_proxy.parse_dc_ip_list(lines)
-        except ValueError as e:
-            _show_error(str(e))
-            return
-
-        new_cfg = {
-            "host": host_val,
-            "port": port_val,
-            "dc_ip": lines,
-            "verbose": verbose_var.get(),
-        }
-
-        for i, key in enumerate(_adv_keys):
-            col_frame = _adv_entries[i]
-            entry = col_frame.winfo_children()[1]
-            try:
-                val = float(entry.get().strip())
-                if key in ("buf_kb", "pool_size"):
-                    val = int(val)
-                new_cfg[key] = val
-            except ValueError:
-                new_cfg[key] = DEFAULT_CONFIG[key]
+        new_cfg = merged
         save_config(new_cfg)
         _config.update(new_cfg)
         log.info("Config saved: %s", new_cfg)
@@ -463,21 +360,18 @@ def _edit_config_dialog():
     def on_cancel():
         root.destroy()
 
-    btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
-    btn_frame.pack(fill="x", pady=(20, 0))
-    ctk.CTkButton(btn_frame, text="Сохранить", height=38,
-                  font=(FONT_FAMILY, 14, "bold"), corner_radius=10,
-                  fg_color=TG_BLUE, hover_color=TG_BLUE_HOVER,
-                  text_color="#ffffff",
-                  command=on_save).pack(side="left", fill="x", expand=True, padx=(0, 8))
-    ctk.CTkButton(btn_frame, text="Отмена", height=38,
-                  font=(FONT_FAMILY, 14), corner_radius=10,
-                  fg_color=FIELD_BG, hover_color=FIELD_BORDER,
-                  text_color=TEXT_PRIMARY, border_width=1,
-                  border_color=FIELD_BORDER,
-                  command=on_cancel).pack(side="right", fill="x", expand=True)
+    install_tray_config_buttons(
+        ctk, footer, theme, on_save=on_save, on_cancel=on_cancel)
 
-    root.mainloop()
+    try:
+        root.mainloop()
+    finally:
+        import tkinter as tk
+        try:
+            if root.winfo_exists():
+                root.destroy()
+        except tk.TclError:
+            pass
 
 
 def _on_open_logs(icon=None, item=None):
@@ -525,128 +419,41 @@ def _show_first_run():
 
     host = _config.get("host", DEFAULT_CONFIG["host"])
     port = _config.get("port", DEFAULT_CONFIG["port"])
-    tg_url = f"tg://socks?server={host}&port={port}"
 
     if ctk is None:
         FIRST_RUN_MARKER.touch()
         return
 
-    ctk.set_appearance_mode("light")
-    ctk.set_default_color_theme("blue")
+    theme = ctk_theme_for_platform()
+    w, h = FIRST_RUN_SIZE
 
-    TG_BLUE = "#3390ec"
-    TG_BLUE_HOVER = "#2b7cd4"
-    BG = "#ffffff"
-    FIELD_BG = "#f0f2f5"
-    FIELD_BORDER = "#d6d9dc"
-    TEXT_PRIMARY = "#000000"
-    TEXT_SECONDARY = "#707579"
-    FONT_FAMILY = "Sans"
-
-    root = ctk.CTk()
-    root.title("TG WS Proxy")
-    root.resizable(False, False)
-    root.attributes("-topmost", True)
-
-    icon_img = _load_icon()
-    if icon_img:
-        from PIL import ImageTk
-
-        _photo = ImageTk.PhotoImage(icon_img.resize((64, 64)))
-        root.iconphoto(False, _photo)
-
-    w, h = 520, 440
-    sw = root.winfo_screenwidth()
-    sh = root.winfo_screenheight()
-    root.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
-    root.configure(fg_color=BG)
-
-    frame = ctk.CTkFrame(root, fg_color=BG, corner_radius=0)
-    frame.pack(fill="both", expand=True, padx=28, pady=24)
-
-    title_frame = ctk.CTkFrame(frame, fg_color="transparent")
-    title_frame.pack(anchor="w", pady=(0, 16), fill="x")
-
-    # Blue accent bar
-    accent_bar = ctk.CTkFrame(
-        title_frame, fg_color=TG_BLUE, width=4, height=32, corner_radius=2
-    )
-    accent_bar.pack(side="left", padx=(0, 12))
-
-    ctk.CTkLabel(
-        title_frame,
-        text="Прокси запущен и работает в системном трее",
-        font=(FONT_FAMILY, 17, "bold"),
-        text_color=TEXT_PRIMARY,
-    ).pack(side="left")
-
-    # Info sections
-    sections = [
-        ("Как подключить Telegram Desktop:", True),
-        ("  Автоматически:", True),
-        (f"  ПКМ по иконке в трее → «Открыть в Telegram»", False),
-        (f"  Или ссылка: {tg_url}", False),
-        ("\n  Вручную:", True),
-        ("  Настройки → Продвинутые → Тип подключения → Прокси", False),
-        (f"  SOCKS5 → {host} : {port} (без логина/пароля)", False),
-    ]
-
-    for text, bold in sections:
-        weight = "bold" if bold else "normal"
-        ctk.CTkLabel(
-            frame,
-            text=text,
-            font=(FONT_FAMILY, 13, weight),
-            text_color=TEXT_PRIMARY,
-            anchor="w",
-            justify="left",
-        ).pack(anchor="w", pady=1)
-
-    # Spacer
-    ctk.CTkFrame(frame, fg_color="transparent", height=16).pack()
-
-    # Separator
-    ctk.CTkFrame(frame, fg_color=FIELD_BORDER, height=1, corner_radius=0).pack(
-        fill="x", pady=(0, 12)
+    root = create_ctk_root(
+        ctk,
+        title="TG WS Proxy",
+        width=w,
+        height=h,
+        theme=theme,
+        after_create=_apply_linux_ctk_window_icon,
     )
 
-    # Checkbox
-    auto_var = ctk.BooleanVar(value=True)
-    ctk.CTkCheckBox(
-        frame,
-        text="Открыть прокси в Telegram сейчас",
-        variable=auto_var,
-        font=(FONT_FAMILY, 13),
-        text_color=TEXT_PRIMARY,
-        fg_color=TG_BLUE,
-        hover_color=TG_BLUE_HOVER,
-        corner_radius=6,
-        border_width=2,
-        border_color=FIELD_BORDER,
-    ).pack(anchor="w", pady=(0, 16))
-
-    def on_ok():
+    def on_done(open_tg: bool):
         FIRST_RUN_MARKER.touch()
-        open_tg = auto_var.get()
         root.destroy()
         if open_tg:
             _on_open_in_telegram()
 
-    ctk.CTkButton(
-        frame,
-        text="Начать",
-        width=180,
-        height=42,
-        font=(FONT_FAMILY, 15, "bold"),
-        corner_radius=10,
-        fg_color=TG_BLUE,
-        hover_color=TG_BLUE_HOVER,
-        text_color="#ffffff",
-        command=on_ok,
-    ).pack(pady=(0, 0))
+    populate_first_run_window(
+        ctk, root, theme, host=host, port=port, on_done=on_done)
 
-    root.protocol("WM_DELETE_WINDOW", on_ok)
-    root.mainloop()
+    try:
+        root.mainloop()
+    finally:
+        import tkinter as tk
+        try:
+            if root.winfo_exists():
+                root.destroy()
+        except tk.TclError:
+            pass
 
 
 def _has_ipv6_enabled() -> bool:
@@ -722,7 +529,7 @@ def run_tray():
 
     setup_logging(_config.get("verbose", False),
                   log_max_mb=_config.get("log_max_mb", DEFAULT_CONFIG["log_max_mb"]))
-    log.info("TG WS Proxy tray app starting")
+    log.info("TG WS Proxy версия %s, tray app starting", __version__)
     log.info("Config: %s", _config)
     log.info("Log file: %s", LOG_FILE)
 
@@ -737,6 +544,8 @@ def run_tray():
         return
 
     start_proxy()
+
+    _maybe_notify_update_async()
 
     _show_first_run()
     _check_ipv6_warning()
