@@ -58,6 +58,9 @@ class MainActivity : AppCompatActivity() {
         binding.openLogsButton.setOnClickListener { onOpenLogsClicked() }
         binding.openTelegramButton.setOnClickListener { onOpenTelegramClicked() }
         binding.openReleasePageButton.setOnClickListener { onOpenReleasePageClicked() }
+        binding.checkUpdatesSwitch.setOnCheckedChangeListener { _, _ ->
+            renderUpdateStatus(currentUpdateStatus, binding.checkUpdatesSwitch.isChecked)
+        }
         binding.disableBatteryOptimizationButton.setOnClickListener {
             AndroidSystemStatus.openBatteryOptimizationSettings(this)
         }
@@ -142,6 +145,7 @@ class MainActivity : AppCompatActivity() {
         binding.poolSizeInput.setText(config.poolSizeText)
         binding.checkUpdatesSwitch.isChecked = config.checkUpdates
         binding.verboseSwitch.isChecked = config.verbose
+        renderUpdateStatus(currentUpdateStatus, config.checkUpdates)
         renderUpstreamConfigState(
             config.upstreamMode,
             config.relayUrlText,
@@ -181,23 +185,35 @@ class MainActivity : AppCompatActivity() {
                 PythonProxyBridge.getUpdateStatus(this@MainActivity, checkNow)
             }
             currentUpdateStatus = status
-            binding.updateStatusValue.text = when {
-                !status.error.isNullOrBlank() -> {
-                    getString(R.string.updates_status_error, status.error)
-                }
-                status.hasUpdate && !status.latestVersion.isNullOrBlank() -> {
-                    getString(
-                        R.string.updates_status_available,
-                        status.latestVersion,
-                        status.currentVersion,
-                    )
-                }
-                status.aheadOfRelease -> {
-                    getString(R.string.updates_status_newer, status.currentVersion)
-                }
-                else -> {
-                    getString(R.string.updates_status_latest, status.currentVersion)
-                }
+            renderUpdateStatus(status, binding.checkUpdatesSwitch.isChecked)
+        }
+    }
+
+    private fun renderUpdateStatus(status: ProxyUpdateStatus?, checkUpdatesEnabled: Boolean) {
+        val currentVersion = status?.currentVersion ?: "unknown"
+        binding.currentVersionValue.text = currentVersion
+        binding.updateStatusValue.text = when {
+            !checkUpdatesEnabled -> {
+                getString(R.string.updates_status_disabled)
+            }
+            status == null -> {
+                getString(R.string.updates_status_initial)
+            }
+            !status.error.isNullOrBlank() -> {
+                getString(R.string.updates_status_error, status.error)
+            }
+            status.hasUpdate && !status.latestVersion.isNullOrBlank() -> {
+                getString(
+                    R.string.updates_status_available,
+                    status.latestVersion,
+                    status.currentVersion,
+                )
+            }
+            status.aheadOfRelease -> {
+                getString(R.string.updates_status_newer, status.currentVersion)
+            }
+            else -> {
+                getString(R.string.updates_status_latest, status.currentVersion)
             }
         }
     }

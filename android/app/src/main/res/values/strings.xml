@@ -18,8 +18,10 @@
     <string name="system_check_background_restricted">Background restriction: enabled, Android may block long-running work.</string>
     <string name="system_check_oem_note">Some phones also require manual vendor settings such as Autostart, Lock in recents, or Unrestricted battery mode.</string>
     <string name="updates_label">Updates</string>
+    <string name="updates_current_version_label">Installed version</string>
     <string name="updates_check_label">Check for updates on launch</string>
     <string name="updates_status_initial">Status will appear after background check.</string>
+    <string name="updates_status_disabled">Automatic update checks are disabled.</string>
     <string name="updates_status_latest">Installed version %1$s matches the latest GitHub release.</string>
     <string name="updates_status_newer">Installed version %1$s is newer than the latest GitHub release.</string>
     <string name="updates_status_available">Version %1$s is available on GitHub (installed: %2$s).</string>
