@@ -161,7 +161,9 @@ def get_update_status_json(check_now: bool = False) -> str:
             update_check.run_check(__version__)
         payload.update(update_check.get_status())
         payload["current_version"] = __version__
+        payload["latest"] = payload.get("latest") or ""
         payload["html_url"] = payload.get("html_url") or update_check.RELEASES_PAGE_URL
+        payload["error"] = payload.get("error") or ""
     except Exception as exc:
         payload["error"] = str(exc)
     return json.dumps(payload)

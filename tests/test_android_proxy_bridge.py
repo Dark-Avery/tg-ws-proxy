@@ -212,6 +212,32 @@ class AndroidProxyBridgeTests(unittest.TestCase):
         self.assertFalse(result["checked"])
         self.assertIn("No module named 'utils'", result["error"])
 
+    def test_get_update_status_json_normalizes_none_fields_for_kotlin(self):
+        original_load_update_check = android_proxy_bridge._load_update_check
+        try:
+            class FakeUpdateCheck:
+                RELEASES_PAGE_URL = "https://example.com/releases/latest"
+
+                @staticmethod
+                def get_status():
+                    return {
+                        "checked": True,
+                        "latest": None,
+                        "has_update": False,
+                        "ahead_of_release": True,
+                        "html_url": None,
+                        "error": None,
+                    }
+
+            android_proxy_bridge._load_update_check = lambda: FakeUpdateCheck
+            result = json.loads(android_proxy_bridge.get_update_status_json(False))
+        finally:
+            android_proxy_bridge._load_update_check = original_load_update_check
+
+        self.assertEqual(result["latest"], "")
+        self.assertEqual(result["error"], "")
+        self.assertEqual(result["html_url"], "https://example.com/releases/latest")
+
 
 if __name__ == "__main__":
     unittest.main()
