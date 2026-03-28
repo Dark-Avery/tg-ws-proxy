@@ -423,13 +423,19 @@ jobs:
           cp app/build/outputs/apk/legacy32/release/app-legacy32-release.apk \
             "app/build/outputs/apk/legacy32/release/$ANDROID_APK_LEGACY32_NAME"
 
+      - name: Stage Android release artifacts
+        run: |
+          mkdir -p dist
+          cp "app/build/outputs/apk/standard/release/$ANDROID_APK_STANDARD_NAME" "dist/$ANDROID_APK_STANDARD_NAME"
+          cp "app/build/outputs/apk/legacy32/release/$ANDROID_APK_LEGACY32_NAME" "dist/$ANDROID_APK_LEGACY32_NAME"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: TgWsProxy-android-release
           path: |
-            android/app/build/outputs/apk/standard/release/${{ env.ANDROID_APK_STANDARD_NAME }}
-            android/app/build/outputs/apk/legacy32/release/${{ env.ANDROID_APK_LEGACY32_NAME }}
+            android/dist/${{ env.ANDROID_APK_STANDARD_NAME }}
+            android/dist/${{ env.ANDROID_APK_LEGACY32_NAME }}
 
   release:
     needs: [build-windows, build-win7, build-macos, build-linux, build-android, build-relay]
