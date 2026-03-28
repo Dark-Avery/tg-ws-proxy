@@ -191,7 +191,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderUpdateStatus(status: ProxyUpdateStatus?, checkUpdatesEnabled: Boolean) {
         val currentVersion = status?.currentVersion ?: "unknown"
-        binding.currentVersionValue.text = currentVersion
+        binding.currentVersionValue.text = getString(
+            R.string.updates_current_version_format,
+            currentVersion,
+        )
         binding.updateStatusValue.text = when {
             !checkUpdatesEnabled -> {
                 getString(R.string.updates_status_disabled)
