@@ -30,13 +30,18 @@ except ImportError:
     pyperclip = None
 
 import proxy.tg_ws_proxy as tg_ws_proxy
-from proxy.app_runtime import DEFAULT_CONFIG, ProxyAppRuntime
+from proxy import __version__
+from utils.default_config import default_tray_config
+from proxy.app_runtime import ProxyAppRuntime
 
 APP_NAME = "TgWsProxy"
 APP_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
 FIRST_RUN_MARKER = APP_DIR / ".first_run_done"
 IPV6_WARN_MARKER = APP_DIR / ".ipv6_warned"
 MENUBAR_ICON_PATH = APP_DIR / "menubar_icon.png"
+
+DEFAULT_CONFIG = default_tray_config()
+
 _app: Optional[object] = None
 _config: dict = {}
 _exiting: bool = False
@@ -247,6 +252,10 @@ def _ensure_menubar_icon():
 
 # Native macOS dialogs
 
+def _escape_osascript_text(text: str) -> str:
+    return text.replace('\\', '\\\\').replace('"', '\\"')
+
+
 def _osascript(script: str) -> str:
     r = subprocess.run(
         ['osascript', '-e', script],
@@ -255,28 +264,46 @@ def _osascript(script: str) -> str:
 
 
 def _show_error(text: str, title: str = "TG WS Proxy"):
-    text_esc = text.replace('\\', '\\\\').replace('"', '\\"')
-    title_esc = title.replace('\\', '\\\\').replace('"', '\\"')
+    text_esc = _escape_osascript_text(text)
+    title_esc = _escape_osascript_text(title)
     _osascript(
         f'display dialog "{text_esc}" with title "{title_esc}" '
         f'buttons {{"OK"}} default button "OK" with icon stop')
 
 
 def _show_info(text: str, title: str = "TG WS Proxy"):
-    text_esc = text.replace('\\', '\\\\').replace('"', '\\"')
-    title_esc = title.replace('\\', '\\\\').replace('"', '\\"')
+    text_esc = _escape_osascript_text(text)
+    title_esc = _escape_osascript_text(title)
     _osascript(
         f'display dialog "{text_esc}" with title "{title_esc}" '
         f'buttons {{"OK"}} default button "OK" with icon note')
 
 
 def _ask_yes_no(text: str, title: str = "TG WS Proxy") -> bool:
-    text_esc = text.replace('\\', '\\\\').replace('"', '\\"')
-    title_esc = title.replace('\\', '\\\\').replace('"', '\\"')
-    result = _osascript(
-        f'display dialog "{text_esc}" with title "{title_esc}" '
-        f'buttons {{"Нет", "Да"}} default button "Да" with icon note')
-    return "Да" in result
+    result = _ask_yes_no_close(text, title)
+    return result is True
+
+
+def _ask_yes_no_close(text: str,
+                      title: str = "TG WS Proxy") -> Optional[bool]:
+    text_esc = _escape_osascript_text(text)
+    title_esc = _escape_osascript_text(title)
+    r = subprocess.run(
+        ['osascript', '-e',
+         f'button returned of (display dialog "{text_esc}" '
+         f'with title "{title_esc}" '
+         f'buttons {{"Закрыть", "Нет", "Да"}} '
+         f'default button "Да" cancel button "Закрыть" with icon note)'],
+        capture_output=True, text=True)
+    if r.returncode != 0:
+        return None
+
+    result = r.stdout.strip()
+    if result == "Да":
+        return True
+    if result == "Нет":
+        return False
+    return None
 
 
 # Proxy lifecycle
@@ -296,8 +323,9 @@ def restart_proxy():
 # Menu callbacks
 
 def _on_open_in_telegram(_=None):
+    host = _config.get("host", DEFAULT_CONFIG["host"])
     port = _config.get("port", DEFAULT_CONFIG["port"])
-    url = f"tg://socks?server=127.0.0.1&port={port}"
+    url = f"tg://socks?server={host}&port={port}"
     log.info("Opening %s", url)
     try:
         result = subprocess.call(['open', url])
@@ -345,15 +373,16 @@ def _on_open_logs(_=None):
 # Show a native text input dialog. Returns None if cancelled.
 def _osascript_input(prompt: str, default: str,
                      title: str = "TG WS Proxy") -> Optional[str]:
-    prompt_esc = prompt.replace('\\', '\\\\').replace('"', '\\"')
-    default_esc = default.replace('\\', '\\\\').replace('"', '\\"')
-    title_esc = title.replace('\\', '\\\\').replace('"', '\\"')
+    prompt_esc = _escape_osascript_text(prompt)
+    default_esc = _escape_osascript_text(default)
+    title_esc = _escape_osascript_text(title)
     r = subprocess.run(
         ['osascript', '-e',
          f'text returned of (display dialog "{prompt_esc}" '
          f'default answer "{default_esc}" '
          f'with title "{title_esc}" '
-         f'buttons {{"Отмена", "OK"}} default button "OK")'],
+         f'buttons {{"Закрыть", "OK"}} '
+         f'default button "OK" cancel button "Закрыть")'],
         capture_output=True, text=True)
     if r.returncode != 0:
         return None
@@ -362,6 +391,55 @@ def _osascript_input(prompt: str, default: str,
 
 def _on_edit_config(_=None):
     threading.Thread(target=_edit_config_dialog, daemon=True).start()
+
+
+def _check_updates_menu_title() -> str:
+    on = bool(_config.get("check_updates", True))
+    return (
+        "✓ Проверять обновления при запуске"
+        if on
+        else "Проверять обновления при запуске (выкл)"
+    )
+
+
+def _toggle_check_updates(_=None):
+    global _config
+    _config["check_updates"] = not bool(_config.get("check_updates", True))
+    save_config(_config)
+    if _app is not None:
+        _app._check_updates_item.title = _check_updates_menu_title()
+
+
+def _on_open_release_page(_=None):
+    from utils.update_check import RELEASES_PAGE_URL
+    webbrowser.open(RELEASES_PAGE_URL)
+
+
+def _maybe_notify_update_async():
+    def _work():
+        time.sleep(1.5)
+        if _exiting:
+            return
+        if not _config.get("check_updates", True):
+            return
+        try:
+            from utils.update_check import RELEASES_PAGE_URL, get_status, run_check
+            run_check(__version__)
+            st = get_status()
+            if not st.get("has_update"):
+                return
+            url = (st.get("html_url") or "").strip() or RELEASES_PAGE_URL
+            ver = st.get("latest") or "?"
+            if _ask_yes_no(
+                f"Доступна новая версия: {ver}\n\n"
+                f"Открыть страницу релиза в браузере?",
+                "TG WS Proxy — обновление",
+            ):
+                webbrowser.open(url)
+        except Exception as exc:
+            log.debug("Update check failed: %s", exc)
+
+    threading.Thread(target=_work, daemon=True, name="update-check").start()
 
 
 # Settings via native macOS dialogs
@@ -486,7 +564,9 @@ def _edit_config_dialog():
             return
 
     # Verbose
-    verbose = _ask_yes_no("Включить подробное логирование (verbose)?")
+    verbose = _ask_yes_no_close("Включить подробное логирование (verbose)?")
+    if verbose is None:
+        return
 
     # Advanced settings
     adv_str = _osascript_input(
@@ -495,6 +575,8 @@ def _edit_config_dialog():
         f"{cfg.get('buf_kb', DEFAULT_CONFIG['buf_kb'])},"
         f"{cfg.get('pool_size', DEFAULT_CONFIG['pool_size'])},"
         f"{cfg.get('log_max_mb', DEFAULT_CONFIG['log_max_mb'])}")
+    if adv_str is None:
+        return
 
     adv = {}
     if adv_str:
@@ -529,7 +611,8 @@ def _edit_config_dialog():
     if _app:
         _app.update_menu_title()
 
-    if _ask_yes_no("Настройки сохранены.\n\nПерезапустить прокси сейчас?"):
+    if _ask_yes_no_close(
+            "Настройки сохранены.\n\nПерезапустить прокси сейчас?"):
         restart_proxy()
 
 
@@ -631,6 +714,15 @@ class TgWsProxyApp(_TgWsProxyAppBase):
         self._logs_item = rumps.MenuItem(
             "Открыть логи",
             callback=_on_open_logs)
+        self._release_page_item = rumps.MenuItem(
+            "Страница релиза на GitHub…",
+            callback=_on_open_release_page)
+        self._check_updates_item = rumps.MenuItem(
+            _check_updates_menu_title(),
+            callback=_toggle_check_updates)
+        self._version_item = rumps.MenuItem(
+            f"Версия {__version__}",
+            callback=lambda _: None)
 
         super().__init__(
             "TG WS Proxy",
@@ -646,6 +738,11 @@ class TgWsProxyApp(_TgWsProxyAppBase):
                 self._restart_item,
                 self._settings_item,
                 self._logs_item,
+                None,
+                self._release_page_item,
+                self._check_updates_item,
+                None,
+                self._version_item,
             ])
 
     def update_menu_title(self):
@@ -668,7 +765,7 @@ def run_menubar():
 
     setup_logging(_config.get("verbose", False),
                   log_max_mb=_config.get("log_max_mb", DEFAULT_CONFIG["log_max_mb"]))
-    log.info("TG WS Proxy menubar app starting")
+    log.info("TG WS Proxy версия %s, menubar app starting", __version__)
     log.info("Config: %s", _config)
     log.info("Log file: %s", LOG_FILE)
 
@@ -683,6 +780,9 @@ def run_menubar():
         return
 
     start_proxy()
+
+    _maybe_notify_update_async()
+
     _show_first_run()
     _check_ipv6_warning()
 

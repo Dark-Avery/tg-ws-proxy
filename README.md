@@ -63,7 +63,7 @@ fork дополнительно поддерживает:
 
 - **Открыть в Telegram** — автоматически настроить прокси через `tg://socks` ссылку
 - **Перезапустить прокси** — перезапуск без выхода из приложения
-- **Настройки...** — GUI-редактор конфигурации
+- **Настройки...** — GUI-редактор конфигурации (в т.ч. версия приложения, опциональная проверка обновлений с GitHub)
 - **Открыть логи** — открыть файл логов
 - **Выход** — остановить прокси и закрыть приложение
 
@@ -83,6 +83,8 @@ fork дополнительно поддерживает:
 - нажмите **Open in Telegram**
 - при необходимости настройте relay mode
 
+При первом запуске после старта может появиться запрос об открытии страницы релиза, если на GitHub вышла новая версия (отключается в настройках).
+
 ### macOS
 
 Перейдите на [страницу релизов](https://github.com/Dark-Avery/tg-ws-proxy/releases) и скачайте **`TgWsProxy_macos_universal.dmg`** — универсальная сборка для Apple Silicon и Intel.
@@ -94,6 +96,21 @@ fork дополнительно поддерживает:
 ### Linux
 
 Для Debian/Ubuntu скачайте со [страницы релизов](https://github.com/Dark-Avery/tg-ws-proxy/releases) пакет **`TgWsProxy_linux_amd64.deb`**.
+
+Для Arch и Arch-Based дистрибутивов подготовлены пакеты в AUR: [tg-ws-proxy-bin](https://aur.archlinux.org/packages/tg-ws-proxy-bin), [tg-ws-proxy-git](https://aur.archlinux.org/packages/tg-ws-proxy-git), [tg-ws-proxy-cli](https://aur.archlinux.org/packages/tg-ws-proxy-cli)
+
+```shell
+# Установка без AUR-helper
+git clone https://aur.archlinux.org/tg-ws-proxy-bin.git
+cd tg-ws-proxy-bin
+makepkg -si
+
+# При помощи AUR-helper
+paru -S tg-ws-proxy-bin
+
+# Если вы установили -cli пакет, то запуск осуществляется через systemctl, где 8888 это номер порта прокси:
+sudo systemctl start tg-ws-proxy-cli@8888
+```
 
 Для остальных дистрибутивов можно использовать **`TgWsProxy_linux_amd64`** (бинарный файл для x86_64).
 
@@ -115,31 +132,24 @@ pip install -e .
 tg-ws-proxy
 ```
 
-### Windows 10+
+### Windows 7/10+
 
 ```bash
-pip install -e ".[win10]"
-tg-ws-proxy-tray-win
-```
-
-### Windows 7
-
-```bash
-pip install -e ".[win7]"
+pip install -e .
 tg-ws-proxy-tray-win
 ```
 
 ### macOS
 
 ```bash
-pip install -e ".[macos]"
+pip install -e .
 tg-ws-proxy-tray-macos
 ```
 
 ### Linux
 
 ```bash
-pip install -e ".[linux]"
+pip install -e .
 tg-ws-proxy-tray-linux
 ```
 
@@ -293,6 +303,7 @@ Tray-приложение хранит данные в:
 
 ```json
 {
+  "host": "127.0.0.1",
   "port": 1080,
   "dc_ip": [
     "2:149.154.167.220",
@@ -302,9 +313,15 @@ Tray-приложение хранит данные в:
   "relay_url": "wss://relay.example.com/connect",
   "relay_token": "replace-me",
   "direct_ws_timeout_seconds": 4.0,
-  "verbose": false
+  "verbose": false,
+  "buf_kb": 256,
+  "pool_size": 4,
+  "log_max_mb": 5.0,
+  "check_updates": true
 }
 ```
+
+Ключ **`check_updates`** — при `true` при запросе к GitHub сравнивается версия с последним релизом (только уведомление и ссылка на страницу загрузки). На Windows в конфиге может быть **`autostart`** (автозапуск при входе в систему).
 
 Android хранит рабочие файлы в приватной директории приложения. Основные параметры редактируются через UI приложения.
 
@@ -349,7 +366,8 @@ Self-hosted relay нужен для сценариев, где direct WebSocket 
 Минимально поддерживаемые версии ОС для текущих бинарных сборок:
 
 - Windows 10+ для `TgWsProxy_windows.exe`
-- Windows 7 для `TgWsProxy_windows_7.exe`
+- Windows 7 (x64) для `TgWsProxy_windows_7_64bit.exe`
+- Windows 7 (x32) для `TgWsProxy_windows_7_32bit.exe`
 - Intel macOS 10.15+
 - Apple Silicon macOS 11.0+
 - Linux x86_64 (требуется AppIndicator для системного трея)
