@@ -1,6 +1,7 @@
 import sys
 import unittest
 import json
+import subprocess
 from pathlib import Path
 
 
@@ -225,6 +226,38 @@ class AndroidProxyBridgeTests(unittest.TestCase):
         self.assertEqual(result["latest"], "")
         self.assertEqual(result["error"], "")
         self.assertEqual(result["html_url"], "https://example.com/releases/latest")
+
+    def test_android_bridge_import_and_update_status_work_without_cryptography(self):
+        root = Path(__file__).resolve().parents[1]
+        script = f"""
+import importlib.abc
+import sys
+from pathlib import Path
+
+root = Path({str(root)!r})
+sys.path.insert(0, str(root / "android" / "app" / "src" / "main" / "python"))
+sys.path.insert(0, str(root))
+
+class BlockCryptography(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path, target=None):
+        if fullname == "cryptography" or fullname.startswith("cryptography."):
+            raise ModuleNotFoundError("No module named 'cryptography'")
+        return None
+
+sys.meta_path.insert(0, BlockCryptography())
+
+import android_proxy_bridge
+print(android_proxy_bridge.get_update_status_json(False))
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        payload = json.loads(result.stdout.strip())
+        self.assertEqual(payload["current_version"], android_proxy_bridge.__version__)
+        self.assertEqual(payload["error"], "")
 
 
 if __name__ == "__main__":
