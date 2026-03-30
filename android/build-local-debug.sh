@@ -41,6 +41,7 @@ GRADLE_BIN="gradle"
 if [[ -x "$ROOT_DIR/gradlew" ]]; then
   GRADLE_BIN="$ROOT_DIR/gradlew"
 fi
+GRADLE_RUN_DIR="$ROOT_DIR"
 
 ATTEMPTS="${ATTEMPTS:-5}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-15}"
@@ -171,7 +172,10 @@ prepare_wsl_build_dir
 
 for attempt in $(seq 1 "$ATTEMPTS"); do
   echo "==> Android build attempt $attempt/$ATTEMPTS ($TASK)"
-  if "$GRADLE_BIN" --no-daemon --console=plain "$TASK"; then
+  if (
+    cd "$GRADLE_RUN_DIR"
+    "$GRADLE_BIN" --no-daemon --console=plain "$TASK"
+  ); then
     exit 0
   fi
 
