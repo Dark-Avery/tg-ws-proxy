@@ -371,6 +371,14 @@ class MainActivity : AppCompatActivity() {
             upstreamModeOptions.map { it.second },
         )
         binding.upstreamModeInput.setAdapter(adapter)
+        binding.upstreamModeInput.setOnClickListener {
+            binding.upstreamModeInput.showDropDown()
+        }
+        binding.upstreamModeInput.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                binding.upstreamModeInput.showDropDown()
+            }
+        }
         binding.upstreamModeInput.setOnItemClickListener { _, _, _, _ ->
             renderUpstreamConfigState(
                 selectedUpstreamModeValue(),

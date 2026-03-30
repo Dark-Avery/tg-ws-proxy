@@ -28,7 +28,10 @@ object UpstreamMode {
     }
 
     fun requiresRelayConfig(value: String?): Boolean {
-        return normalize(value) == RELAY
+        return when (normalize(value)) {
+            AUTO, RELAY -> true
+            else -> false
+        }
     }
 
     fun summary(context: Context, value: String?, relayUrl: String): String {

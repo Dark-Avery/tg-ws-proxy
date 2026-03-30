@@ -291,12 +291,16 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="16dp"
-                    android:hint="@string/upstream_mode_hint">
+                    android:hint="@string/upstream_mode_hint"
+                    app:endIconMode="dropdown_menu">
 
-                    <AutoCompleteTextView
+                    <com.google.android.material.textfield.MaterialAutoCompleteTextView
                         android:id="@+id/upstreamModeInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:focusable="false"
+                        android:clickable="true"
+                        android:cursorVisible="false"
                         android:inputType="none" />
                 </com.google.android.material.textfield.TextInputLayout>
 
