@@ -10,7 +10,7 @@ from proxy import __version__
 import proxy.tg_ws_proxy as tg_ws_proxy
 
 
-RELEASES_PAGE_URL = "https://github.com/Flowseal/tg-ws-proxy/releases/latest"
+RELEASES_PAGE_URL = "https://github.com/Dark-Avery/tg-ws-proxy/releases/latest"
 
 
 _RUNTIME_LOCK = threading.RLock()

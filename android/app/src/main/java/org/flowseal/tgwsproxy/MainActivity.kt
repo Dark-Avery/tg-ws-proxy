@@ -153,7 +153,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onOpenReleasePageClicked() {
-        val url = currentUpdateStatus?.htmlUrl ?: "https://github.com/Flowseal/tg-ws-proxy/releases/latest"
+        val url = currentUpdateStatus?.htmlUrl ?: "https://github.com/Dark-Avery/tg-ws-proxy/releases/latest"
         val opened = runCatching {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         }.isSuccess
