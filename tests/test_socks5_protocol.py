@@ -2,6 +2,7 @@ import json
 import hashlib
 import struct
 import unittest
+from unittest.mock import patch
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from proxy.tg_ws_proxy import (
@@ -11,6 +12,7 @@ from proxy.tg_ws_proxy import (
     _build_relay_handshake,
     _generate_relay_init,
     _parse_relay_url,
+    _try_relay_ws,
     _try_handshake,
 )
 
@@ -112,6 +114,44 @@ class MtProtoProtocolTests(unittest.TestCase):
 
         import asyncio
         asyncio.run(_run())
+
+
+class RelayHandshakeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_try_relay_ws_sends_text_handshake_and_accepts_ok_response(self):
+        class _FakeRelaySocket:
+            def __init__(self):
+                self.sent_text = []
+                self.closed = False
+
+            async def send_text(self, text):
+                self.sent_text.append(text)
+
+            async def recv(self):
+                return json.dumps({"ok": True}).encode("utf-8")
+
+            async def close(self):
+                self.closed = True
+
+        fake_ws = _FakeRelaySocket()
+        with patch("proxy.tg_ws_proxy.RawWebSocket.connect",
+                   return_value=fake_ws):
+            ws = await _try_relay_ws(
+                dc=2,
+                is_media=True,
+                target="149.154.167.220",
+                domains=["kws2.web.telegram.org", "kws2-1.web.telegram.org"],
+                label="test",
+                media_tag=" media",
+                relay_url="wss://relay.example.com/connect",
+                relay_token="secret-token",
+            )
+
+        self.assertIs(ws, fake_ws)
+        self.assertEqual(len(fake_ws.sent_text), 1)
+        payload = json.loads(fake_ws.sent_text[0])
+        self.assertEqual(payload["auth_token"], "secret-token")
+        self.assertEqual(payload["dc"], 2)
+        self.assertTrue(payload["media"])
 
 
 if __name__ == "__main__":

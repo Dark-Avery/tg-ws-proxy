@@ -308,6 +308,7 @@ Tray-приложение хранит данные в:
   "upstream_mode": "auto",
   "relay_url": "wss://relay.example.com/connect",
   "relay_token": "",
+  "direct_ws_timeout_seconds": 4.0,
   "verbose": false,
   "buf_kb": 256,
   "pool_size": 4,
@@ -317,6 +318,11 @@ Tray-приложение хранит данные в:
 ```
 
 Ключ **`check_updates`** — при `true` при запросе к GitHub сравнивается версия с последним релизом (только уведомление и ссылка на страницу загрузки). На Windows в конфиге может быть **`autostart`** (автозапуск при входе в систему).
+
+Параметр **`direct_ws_timeout_seconds`** влияет только на режим `Auto`: он задаёт,
+сколько ждать direct Telegram WS перед попыткой relay. При повторяющихся
+деградированных media-сессиях direct WS маршрут также временно понижается, и
+`Auto` начинает предпочитать relay до истечения cooldown.
 
 ## Автоматическая сборка
 
