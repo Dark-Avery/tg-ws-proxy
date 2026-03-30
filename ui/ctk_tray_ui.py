@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tkinter as tk
 import webbrowser
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -59,6 +60,39 @@ _TIP_RELAY_TOKEN = "Общий токен авторизации для relay"
 _INNER_W = 396
 
 
+def _bind_text_context_menu(widget: Any) -> None:
+    target = getattr(widget, "_entry", None) or getattr(widget, "_textbox", None) or widget
+    menu = tk.Menu(target, tearoff=0)
+
+    def _select_all() -> None:
+        try:
+            target.selection_range(0, "end")
+            target.icursor("end")
+        except Exception:
+            try:
+                target.tag_add("sel", "1.0", "end-1c")
+                target.mark_set("insert", "end-1c")
+                target.see("insert")
+            except Exception:
+                pass
+
+    menu.add_command(label="Вырезать", command=lambda: target.event_generate("<<Cut>>"))
+    menu.add_command(label="Копировать", command=lambda: target.event_generate("<<Copy>>"))
+    menu.add_command(label="Вставить", command=lambda: target.event_generate("<<Paste>>"))
+    menu.add_separator()
+    menu.add_command(label="Выделить всё", command=_select_all)
+
+    def _popup(event: Any) -> str:
+        try:
+            target.focus_force()
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+        return "break"
+
+    target.bind("<Button-3>", _popup, add="+")
+
+
 def _entry(ctk, parent, theme, *, var=None, width=0, height=36, radius=10, **kw):
     opts = dict(
         font=(theme.ui_font_family, 13), corner_radius=radius,
@@ -71,7 +105,9 @@ def _entry(ctk, parent, theme, *, var=None, width=0, height=36, radius=10, **kw)
         opts["width"] = width
     opts["height"] = height
     opts.update(kw)
-    return ctk.CTkEntry(parent, **opts)
+    entry = ctk.CTkEntry(parent, **opts)
+    _bind_text_context_menu(entry)
+    return entry
 
 
 def _checkbox(ctk, parent, theme, text, variable):
@@ -237,6 +273,7 @@ def install_tray_config_form(
     )
     dc_textbox.pack(fill="x")
     dc_textbox.insert("1.0", "\n".join(cfg.get("dc_ip", default_config["dc_ip"])))
+    _bind_text_context_menu(dc_textbox)
     attach_tooltip_to_widgets([dc_lbl, dc_textbox], _TIP_DC)
 
     routing = _config_section(ctk, frame, theme, "Маршрутизация upstream")
