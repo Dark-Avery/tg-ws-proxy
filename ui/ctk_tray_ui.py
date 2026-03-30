@@ -52,6 +52,9 @@ _TIP_AUTOSTART = (
 _TIP_CHECK_UPDATES = "При запуске проверять наличие обновлений"
 _TIP_SAVE = "Сохранить настройки"
 _TIP_CANCEL = "Закрыть окно без сохранения изменений"
+_TIP_UPSTREAM_MODE = "Выбор маршрута: direct Telegram WS, auto с relay fallback, либо relay only"
+_TIP_RELAY_URL = "WebSocket URL self-hosted relay, например wss://relay.example.com/connect"
+_TIP_RELAY_TOKEN = "Общий токен авторизации для relay"
 
 _INNER_W = 396
 
@@ -150,6 +153,9 @@ class TrayConfigFormWidgets:
     port_var: Any
     secret_var: Any
     dc_textbox: Any
+    upstream_mode_var: Any
+    relay_url_var: Any
+    relay_token_var: Any
     verbose_var: Any
     adv_entries: List[Any]
     adv_keys: Tuple[str, ...]
@@ -232,6 +238,65 @@ def install_tray_config_form(
     dc_textbox.pack(fill="x")
     dc_textbox.insert("1.0", "\n".join(cfg.get("dc_ip", default_config["dc_ip"])))
     attach_tooltip_to_widgets([dc_lbl, dc_textbox], _TIP_DC)
+
+    routing = _config_section(ctk, frame, theme, "Маршрутизация upstream")
+
+    upstream_mode_var = ctk.StringVar(value=str(cfg.get("upstream_mode", default_config["upstream_mode"])))
+    relay_url_var = ctk.StringVar(value=str(cfg.get("relay_url", default_config["relay_url"])))
+    relay_token_var = ctk.StringVar(value=str(cfg.get("relay_token", default_config["relay_token"])))
+
+    mode_col = ctk.CTkFrame(routing, fg_color="transparent")
+    mode_col.pack(fill="x", pady=(0, 6))
+    mode_lbl = _label(ctk, mode_col, theme, "Режим upstream", size=11)
+    mode_lbl.pack(anchor="w", pady=(0, 2))
+    mode_values = {
+        "Direct Telegram WS": "telegram_ws_direct",
+        "Auto: direct -> relay -> TCP": "auto",
+        "Relay only": "relay_ws",
+    }
+    reverse_mode_values = {v: k for k, v in mode_values.items()}
+    upstream_mode_menu = ctk.CTkOptionMenu(
+        mode_col,
+        values=list(mode_values.keys()),
+        variable=ctk.StringVar(
+            value=reverse_mode_values.get(
+                upstream_mode_var.get(),
+                "Direct Telegram WS",
+            )
+        ),
+        width=_INNER_W,
+        height=32,
+        font=(theme.ui_font_family, 13),
+        fg_color=theme.field_bg,
+        button_color=theme.tg_blue,
+        button_hover_color=theme.tg_blue_hover,
+        text_color=theme.text_primary,
+        dropdown_fg_color=theme.bg,
+        dropdown_text_color=theme.text_primary,
+        command=lambda selected: upstream_mode_var.set(mode_values[selected]),
+    )
+    upstream_mode_menu.pack(fill="x")
+    attach_tooltip_to_widgets([mode_lbl, upstream_mode_menu, mode_col], _TIP_UPSTREAM_MODE)
+
+    relay_url_col, relay_url_var_entry = _labeled_entry(
+        ctk, routing, theme, "Relay URL",
+        relay_url_var.get(),
+        tip=_TIP_RELAY_URL,
+        width=_INNER_W,
+        pack_fill=True,
+    )
+    relay_url_col.pack(fill="x", pady=(0, 6))
+    relay_url_var = relay_url_var_entry
+
+    relay_token_col, relay_token_var_entry = _labeled_entry(
+        ctk, routing, theme, "Relay token",
+        relay_token_var.get(),
+        tip=_TIP_RELAY_TOKEN,
+        width=_INNER_W,
+        pack_fill=True,
+    )
+    relay_token_col.pack(fill="x")
+    relay_token_var = relay_token_var_entry
 
     log_inner = _config_section(ctk, frame, theme, "Логи и производительность")
 
@@ -318,7 +383,11 @@ def install_tray_config_form(
 
     return TrayConfigFormWidgets(
         host_var=host_var, port_var=port_var, secret_var=secret_var,
-        dc_textbox=dc_textbox, verbose_var=verbose_var,
+        dc_textbox=dc_textbox,
+        upstream_mode_var=upstream_mode_var,
+        relay_url_var=relay_url_var,
+        relay_token_var=relay_token_var,
+        verbose_var=verbose_var,
         adv_entries=adv_entries, adv_keys=adv_keys,
         autostart_var=autostart_var, check_updates_var=check_updates_var,
     )
@@ -385,8 +454,15 @@ def validate_config_form(
         "port": port_val,
         "secret": secret_val,
         "dc_ip": lines,
+        "upstream_mode": widgets.upstream_mode_var.get().strip() or default_config["upstream_mode"],
+        "relay_url": widgets.relay_url_var.get().strip(),
+        "relay_token": widgets.relay_token_var.get().strip(),
         "verbose": widgets.verbose_var.get(),
     }
+    if new_cfg["upstream_mode"] == "relay_ws" and not new_cfg["relay_url"]:
+        return "Для режима Relay only нужно указать Relay URL."
+    if new_cfg["relay_url"] and not _validate_ws_url(new_cfg["relay_url"]):
+        return "Relay URL должен быть в формате ws://host/path или wss://host/path."
     if include_autostart:
         new_cfg["autostart"] = (
             widgets.autostart_var.get()
@@ -398,6 +474,16 @@ def validate_config_form(
     if widgets.check_updates_var is not None:
         new_cfg["check_updates"] = bool(widgets.check_updates_var.get())
     return new_cfg
+
+
+def _validate_ws_url(value: str) -> bool:
+    from urllib.parse import urlparse
+
+    try:
+        parsed = urlparse(value.strip())
+    except Exception:
+        return False
+    return parsed.scheme in ("ws", "wss") and bool(parsed.hostname)
 
 
 def install_tray_config_buttons(

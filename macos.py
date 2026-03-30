@@ -153,7 +153,14 @@ def _run_proxy_thread() -> None:
     stop_ev = _asyncio.Event()
     _async_stop = (loop, stop_ev)
     try:
-        loop.run_until_complete(tg_ws_proxy._run(stop_event=stop_ev))
+        loop.run_until_complete(
+            tg_ws_proxy._run(
+                stop_event=stop_ev,
+                upstream_mode=tg_ws_proxy._upstream_mode,
+                relay_url=tg_ws_proxy._relay_url,
+                relay_token=tg_ws_proxy._relay_token,
+            )
+        )
     except Exception as exc:
         log.error("Proxy thread crashed: %s", exc)
         if "Address already in use" in str(exc):
@@ -367,6 +374,47 @@ def _edit_config_dialog() -> None:
         _show_error(str(e))
         return
 
+    current_mode = cfg.get("upstream_mode", DEFAULT_CONFIG.get("upstream_mode", "telegram_ws_direct"))
+    mode_prompt = (
+        "Режим upstream:\n"
+        "telegram_ws_direct | auto | relay_ws"
+    )
+    upstream_mode = _osascript_input(mode_prompt, str(current_mode))
+    if upstream_mode is None:
+        return
+    upstream_mode = upstream_mode.strip()
+    if upstream_mode not in ("telegram_ws_direct", "auto", "relay_ws"):
+        _show_error("Режим upstream должен быть одним из: telegram_ws_direct, auto, relay_ws.")
+        return
+
+    relay_url = _osascript_input(
+        "Relay URL (пусто если не используется):",
+        str(cfg.get("relay_url", DEFAULT_CONFIG.get("relay_url", ""))),
+    )
+    if relay_url is None:
+        return
+    relay_url = relay_url.strip()
+    if relay_url:
+        try:
+            parsed = urlparse(relay_url)
+        except Exception:
+            parsed = None
+        if parsed is None or parsed.scheme not in ("ws", "wss") or not parsed.hostname:
+            _show_error("Relay URL должен быть в формате ws://host/path или wss://host/path.")
+            return
+
+    if upstream_mode == "relay_ws" and not relay_url:
+        _show_error("Для режима relay_ws нужно указать Relay URL.")
+        return
+
+    relay_token = _osascript_input(
+        "Relay token (можно оставить пустым):",
+        str(cfg.get("relay_token", DEFAULT_CONFIG.get("relay_token", ""))),
+    )
+    if relay_token is None:
+        return
+    relay_token = relay_token.strip()
+
     verbose = _ask_yes_no_close("Включить подробное логирование (verbose)?")
     if verbose is None:
         return
@@ -397,6 +445,9 @@ def _edit_config_dialog() -> None:
         "port": port,
         "secret": secret_str,
         "dc_ip": dc_lines,
+        "upstream_mode": upstream_mode,
+        "relay_url": relay_url,
+        "relay_token": relay_token,
         "verbose": verbose,
         "buf_kb": adv.get("buf_kb", cfg.get("buf_kb", DEFAULT_CONFIG["buf_kb"])),
         "pool_size": adv.get("pool_size", cfg.get("pool_size", DEFAULT_CONFIG["pool_size"])),

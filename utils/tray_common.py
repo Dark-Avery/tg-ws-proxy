@@ -234,7 +234,14 @@ def _run_proxy_thread(on_port_busy: Callable[[str], None]) -> None:
     _async_stop = (loop, stop_ev)
 
     try:
-        loop.run_until_complete(tg_ws_proxy._run(stop_event=stop_ev))
+        loop.run_until_complete(
+            tg_ws_proxy._run(
+                stop_event=stop_ev,
+                upstream_mode=tg_ws_proxy._upstream_mode,
+                relay_url=tg_ws_proxy._relay_url,
+                relay_token=tg_ws_proxy._relay_token,
+            )
+        )
     except Exception as exc:
         log.error("Proxy thread crashed: %s", exc)
         if "Address already in use" in str(exc) or "10048" in str(exc):
@@ -264,6 +271,9 @@ def apply_proxy_config(cfg: dict) -> bool:
     pc.dc_redirects = dc_redirects
     pc.buffer_size = max(4, cfg.get("buf_kb", DEFAULT_CONFIG["buf_kb"])) * 1024
     pc.pool_size = max(0, cfg.get("pool_size", DEFAULT_CONFIG["pool_size"]))
+    tg_ws_proxy._upstream_mode = cfg.get("upstream_mode", DEFAULT_CONFIG["upstream_mode"])
+    tg_ws_proxy._relay_url = cfg.get("relay_url") or None
+    tg_ws_proxy._relay_token = cfg.get("relay_token", DEFAULT_CONFIG["relay_token"])
     return True
 
 
