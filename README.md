@@ -152,44 +152,6 @@ tg-ws-proxy [--port PORT] [--host HOST] [--dc-ip DC:IP ...] [-v]
 android/app/build/outputs/apk/standard/debug/app-standard-debug.apk
 ```
 
-Legacy32 debug-сборка:
-
-```bash
-./android/build-local-debug.sh assembleLegacy32Debug
-```
-
-Результат:
-
-```text
-android/app/build/outputs/apk/legacy32/debug/app-legacy32-debug.apk
-```
-
-### Android signed release APK
-
-Для локальной release-сборки нужен keystore и переменные окружения:
-
-```bash
-export ANDROID_KEYSTORE_FILE=/path/to/tg-ws-proxy-release.keystore
-export ANDROID_KEYSTORE_PASSWORD=...
-export ANDROID_KEY_ALIAS=tg-ws-proxy
-export ANDROID_KEY_PASSWORD=...
-```
-
-Сборка:
-
-```bash
-cd android
-./build-local-debug.sh assembleStandardRelease
-./build-local-debug.sh assembleLegacy32Release
-```
-
-Результат:
-
-```text
-android/app/build/outputs/apk/standard/release/app-standard-release.apk
-android/app/build/outputs/apk/legacy32/release/app-legacy32-release.apk
-```
-
 **Аргументы:**
 
 | Аргумент | По умолчанию | Описание |
@@ -306,18 +268,6 @@ Tray-приложение хранит данные в:
 - Intel macOS 10.15+
 - Apple Silicon macOS 11.0+
 - Linux x86_64 (требуется AppIndicator для системного трея)
-
-Android-артефакты:
-
-- `tg-ws-proxy-android-vX.Y.Z.apk`
-- `tg-ws-proxy-android-vX.Y.Z-legacy32.apk`
-
-Для signed Android release в GitHub Actions нужны secrets:
-
-- `ANDROID_KEYSTORE_BASE64`
-- `ANDROID_KEYSTORE_PASSWORD`
-- `ANDROID_KEY_ALIAS`
-- `ANDROID_KEY_PASSWORD`
 ## Лицензия
 
 [MIT License](LICENSE)
