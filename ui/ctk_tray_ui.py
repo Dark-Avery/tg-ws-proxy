@@ -56,8 +56,19 @@ _TIP_CANCEL = "Закрыть окно без сохранения измене�
 _TIP_UPSTREAM_MODE = "Выбор маршрута: direct Telegram WS, auto с relay fallback, либо relay only"
 _TIP_RELAY_URL = "WebSocket URL self-hosted relay, например wss://relay.example.com/connect"
 _TIP_RELAY_TOKEN = "Общий токен авторизации для relay"
+_TIP_DIRECT_WS_TIMEOUT = "Сколько секунд Auto ждёт direct Telegram WS перед попыткой relay"
 
 _INNER_W = 396
+
+
+def _format_timeout_seconds(value: object) -> str:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        numeric = 10.0
+    if numeric.is_integer():
+        return str(int(numeric))
+    return str(numeric)
 
 
 def _bind_text_context_menu(widget: Any) -> None:
@@ -192,6 +203,7 @@ class TrayConfigFormWidgets:
     upstream_mode_var: Any
     relay_url_var: Any
     relay_token_var: Any
+    direct_ws_timeout_var: Any
     verbose_var: Any
     adv_entries: List[Any]
     adv_keys: Tuple[str, ...]
@@ -335,6 +347,39 @@ def install_tray_config_form(
     relay_token_col.pack(fill="x")
     relay_token_var = relay_token_var_entry
 
+    direct_ws_timeout_col, direct_ws_timeout_var = _labeled_entry(
+        ctk, routing, theme, "Таймаут direct WS перед relay (сек)",
+        _format_timeout_seconds(
+            cfg.get(
+                "direct_ws_timeout_seconds",
+                default_config["direct_ws_timeout_seconds"],
+            )
+        ),
+        tip=_TIP_DIRECT_WS_TIMEOUT,
+        width=_INNER_W,
+        pack_fill=True,
+    )
+
+    def _update_upstream_controls(*_args: Any) -> None:
+        selected_mode = upstream_mode_var.get().strip() or default_config["upstream_mode"]
+        relay_needed = selected_mode in ("auto", "relay_ws")
+        timeout_needed = selected_mode == "auto"
+
+        if relay_needed:
+            relay_url_col.pack(fill="x", pady=(0, 6))
+            relay_token_col.pack(fill="x")
+        else:
+            relay_url_col.pack_forget()
+            relay_token_col.pack_forget()
+
+        if timeout_needed:
+            direct_ws_timeout_col.pack(fill="x", pady=(6, 0))
+        else:
+            direct_ws_timeout_col.pack_forget()
+
+    upstream_mode_var.trace_add("write", _update_upstream_controls)
+    _update_upstream_controls()
+
     log_inner = _config_section(ctk, frame, theme, "Логи и производительность")
 
     verbose_var = ctk.BooleanVar(value=cfg.get("verbose", False))
@@ -424,6 +469,7 @@ def install_tray_config_form(
         upstream_mode_var=upstream_mode_var,
         relay_url_var=relay_url_var,
         relay_token_var=relay_token_var,
+        direct_ws_timeout_var=direct_ws_timeout_var,
         verbose_var=verbose_var,
         adv_entries=adv_entries, adv_keys=adv_keys,
         autostart_var=autostart_var, check_updates_var=check_updates_var,
@@ -494,8 +540,16 @@ def validate_config_form(
         "upstream_mode": widgets.upstream_mode_var.get().strip() or default_config["upstream_mode"],
         "relay_url": widgets.relay_url_var.get().strip(),
         "relay_token": widgets.relay_token_var.get().strip(),
+        "direct_ws_timeout_seconds": default_config["direct_ws_timeout_seconds"],
         "verbose": widgets.verbose_var.get(),
     }
+    try:
+        direct_timeout = float(widgets.direct_ws_timeout_var.get().strip())
+        if direct_timeout <= 0:
+            raise ValueError
+    except ValueError:
+        return "Таймаут direct WS должен быть положительным числом."
+    new_cfg["direct_ws_timeout_seconds"] = direct_timeout
     if new_cfg["upstream_mode"] == "relay_ws" and not new_cfg["relay_url"]:
         return "Для режима Relay only нужно указать Relay URL."
     if new_cfg["relay_url"] and not _validate_ws_url(new_cfg["relay_url"]):

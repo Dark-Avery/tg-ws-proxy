@@ -109,6 +109,16 @@ def _osascript_input(prompt: str, default: str, title: str = "TG WS Proxy") -> O
     return r.stdout.rstrip("\r\n")
 
 
+def _format_timeout_seconds(value: object) -> str:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        numeric = float(DEFAULT_CONFIG["direct_ws_timeout_seconds"])
+    if numeric.is_integer():
+        return str(int(numeric))
+    return str(numeric)
+
+
 # menubar icon
 
 
@@ -415,6 +425,27 @@ def _edit_config_dialog() -> None:
         return
     relay_token = relay_token.strip()
 
+    direct_ws_timeout = float(
+        cfg.get(
+            "direct_ws_timeout_seconds",
+            DEFAULT_CONFIG["direct_ws_timeout_seconds"],
+        )
+    )
+    if upstream_mode == "auto":
+        direct_ws_timeout_input = _osascript_input(
+            "Таймаут direct WS перед relay (в секундах):",
+            _format_timeout_seconds(direct_ws_timeout),
+        )
+        if direct_ws_timeout_input is None:
+            return
+        try:
+            direct_ws_timeout = float(direct_ws_timeout_input.strip())
+            if direct_ws_timeout <= 0:
+                raise ValueError
+        except ValueError:
+            _show_error("Таймаут direct WS должен быть положительным числом.")
+            return
+
     verbose = _ask_yes_no_close("Включить подробное логирование (verbose)?")
     if verbose is None:
         return
@@ -448,6 +479,7 @@ def _edit_config_dialog() -> None:
         "upstream_mode": upstream_mode,
         "relay_url": relay_url,
         "relay_token": relay_token,
+        "direct_ws_timeout_seconds": direct_ws_timeout,
         "verbose": verbose,
         "buf_kb": adv.get("buf_kb", cfg.get("buf_kb", DEFAULT_CONFIG["buf_kb"])),
         "pool_size": adv.get("pool_size", cfg.get("pool_size", DEFAULT_CONFIG["pool_size"])),

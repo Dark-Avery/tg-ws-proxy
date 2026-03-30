@@ -150,6 +150,7 @@ class MainActivity : AppCompatActivity() {
         )
         binding.relayUrlInput.setText(config.relayUrlText)
         binding.relayTokenInput.setText(config.relayTokenText)
+        binding.directWsTimeoutInput.setText(config.directWsTimeoutText)
         binding.logMaxMbInput.setText(config.logMaxMbText)
         binding.bufferKbInput.setText(config.bufferKbText)
         binding.poolSizeInput.setText(config.poolSizeText)
@@ -171,6 +172,7 @@ class MainActivity : AppCompatActivity() {
             upstreamMode = selectedUpstreamModeValue(),
             relayUrlText = binding.relayUrlInput.text?.toString().orEmpty(),
             relayTokenText = binding.relayTokenInput.text?.toString().orEmpty(),
+            directWsTimeoutText = binding.directWsTimeoutInput.text?.toString().orEmpty(),
             logMaxMbText = binding.logMaxMbInput.text?.toString().orEmpty(),
             bufferKbText = binding.bufferKbInput.text?.toString().orEmpty(),
             poolSizeText = binding.poolSizeInput.text?.toString().orEmpty(),
@@ -392,8 +394,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderUpstreamConfigState(upstreamMode: String, relayUrl: String) {
         val requiresRelay = UpstreamMode.requiresRelayConfig(upstreamMode)
+        val needsDirectTimeout = UpstreamMode.normalize(upstreamMode) == UpstreamMode.AUTO
         binding.relayUrlLayout.isVisible = requiresRelay
         binding.relayTokenLayout.isVisible = requiresRelay
+        binding.directWsTimeoutLayout.isVisible = needsDirectTimeout
         val summary = UpstreamMode.summary(this, upstreamMode, relayUrl)
         binding.upstreamModeHint.text = summary
         binding.upstreamStatusValue.text = summary
