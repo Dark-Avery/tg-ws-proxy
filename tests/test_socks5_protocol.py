@@ -1,3 +1,4 @@
+import json
 import hashlib
 import struct
 import unittest
@@ -6,7 +7,9 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from proxy.tg_ws_proxy import (
     PROTO_TAG_ABRIDGED,
     PROTO_TAG_INTERMEDIATE,
+    _build_relay_handshake,
     _generate_relay_init,
+    _parse_relay_url,
     _try_handshake,
 )
 
@@ -56,6 +59,36 @@ class MtProtoProtocolTests(unittest.TestCase):
 
         self.assertEqual(len(relay_init), 64)
         self.assertEqual(relay_init[0], relay_init[0] & 0xFF)
+
+    def test_parse_relay_url_supports_default_connect_path(self):
+        parsed = _parse_relay_url("wss://relay.example.com")
+
+        self.assertEqual(parsed["host"], "relay.example.com")
+        self.assertEqual(parsed["port"], 443)
+        self.assertTrue(parsed["use_tls"])
+        self.assertEqual(parsed["path"], "/connect")
+
+    def test_build_relay_handshake_matches_protocol_v1_shape(self):
+        payload = json.loads(
+            _build_relay_handshake(
+                dc=2,
+                is_media=True,
+                target_ip="149.154.167.220",
+                relay_token="secret-token",
+                domains=["kws2.web.telegram.org", "kws2-1.web.telegram.org"],
+            )
+        )
+
+        self.assertEqual(payload["version"], 1)
+        self.assertEqual(payload["mode"], "telegram_ws")
+        self.assertEqual(payload["dc"], 2)
+        self.assertTrue(payload["media"])
+        self.assertEqual(payload["target_ip"], "149.154.167.220")
+        self.assertEqual(
+            payload["domains"],
+            ["kws2.web.telegram.org", "kws2-1.web.telegram.org"],
+        )
+        self.assertEqual(payload["auth_token"], "secret-token")
 
 
 if __name__ == "__main__":
