@@ -306,7 +306,7 @@ jobs:
           Maintainer: Flowseal
           Depends: libgtk-3-0, libayatana-appindicator3-1, python3-tk
           Description: Telegram Desktop WebSocket Bridge Proxy
-           MTProto/WebSocket bridge proxy for Telegram Desktop with tray UI.
+           SOCKS5/WebSocket bridge proxy for Telegram Desktop with tray UI.
           EOF
 
           dpkg-deb --build --root-owner-group \
@@ -320,6 +320,39 @@ jobs:
           path: |
             dist/TgWsProxy_linux_amd64
             dist/TgWsProxy_linux_amd64.deb
+
+  build-relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: relay/go.mod
+          cache-dependency-path: relay/go.sum
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: |
+          env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+            sdkmanager "ndk;26.3.11579264"
+
+      - name: Build relay binaries
+        working-directory: relay
+        run: |
+          chmod +x build-release.sh
+          ./build-release.sh
+
+      - name: Upload relay artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: tg-ws-relay-binaries
+          path: relay/dist/*
 
   build-android:
     runs-on: ubuntu-latest
@@ -413,7 +446,7 @@ jobs:
             android/dist/${{ env.ANDROID_APK_LEGACY32_NAME }}
 
   release:
-    needs: [build-windows, build-win7, build-macos, build-linux, build-android]
+    needs: [build-windows, build-win7, build-macos, build-linux, build-android, build-relay]
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.make_release == 'true' }}
     steps:
@@ -428,6 +461,12 @@ jobs:
         with:
           name: TgWsProxy-android-release
           path: dist
+
+      - name: Download relay build
+        uses: actions/download-artifact@v8
+        with:
+          name: tg-ws-relay-binaries
+          path: dist/relay
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -445,6 +484,7 @@ jobs:
             dist/TgWsProxy_linux_amd64.deb
             dist/tg-ws-proxy-android-${{ github.event.inputs.version }}.apk
             dist/tg-ws-proxy-android-${{ github.event.inputs.version }}-legacy32.apk
+            dist/relay/*
           draft: false
           prerelease: false
         env:
