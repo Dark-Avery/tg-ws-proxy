@@ -150,6 +150,7 @@ class WsHandshakeError(Exception):
 class RawWebSocket:
     __slots__ = ('reader', 'writer', '_closed')
 
+    OP_TEXT = 0x1
     OP_BINARY = 0x2
     OP_CLOSE = 0x8
     OP_PING = 0x9
@@ -241,6 +242,14 @@ class RawWebSocket:
         if self._closed:
             raise ConnectionError("WebSocket closed")
         frame = self._build_frame(self.OP_BINARY, data, mask=True)
+        self.writer.write(frame)
+        await self.writer.drain()
+
+    async def send_text(self, text: str):
+        if self._closed:
+            raise ConnectionError("WebSocket closed")
+        frame = self._build_frame(self.OP_TEXT, text.encode('utf-8'),
+                                  mask=True)
         self.writer.write(frame)
         await self.writer.drain()
 

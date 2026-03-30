@@ -7,6 +7,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from proxy.tg_ws_proxy import (
     PROTO_TAG_ABRIDGED,
     PROTO_TAG_INTERMEDIATE,
+    RawWebSocket,
     _build_relay_handshake,
     _generate_relay_init,
     _parse_relay_url,
@@ -89,6 +90,28 @@ class MtProtoProtocolTests(unittest.TestCase):
             ["kws2.web.telegram.org", "kws2-1.web.telegram.org"],
         )
         self.assertEqual(payload["auth_token"], "secret-token")
+
+    def test_raw_websocket_send_text_writes_text_frame(self):
+        class _Writer:
+            def __init__(self):
+                self.chunks = []
+
+            def write(self, data):
+                self.chunks.append(data)
+
+            async def drain(self):
+                return None
+
+        async def _run():
+            writer = _Writer()
+            ws = RawWebSocket(reader=None, writer=writer)
+            await ws.send_text('{"ok":true}')
+            self.assertEqual(len(writer.chunks), 1)
+            frame = writer.chunks[0]
+            self.assertEqual(frame[0] & 0x0F, RawWebSocket.OP_TEXT)
+
+        import asyncio
+        asyncio.run(_run())
 
 
 if __name__ == "__main__":
