@@ -170,7 +170,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }.getOrElse { exc ->
                 ProxyUpdateStatus(
-                    currentVersion = "unknown",
+                    currentVersion = currentAppVersionName(),
                     error = exc.message ?: exc.javaClass.simpleName,
                 )
             }

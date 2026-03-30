@@ -17,7 +17,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple
 
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from proxy.crypto_backend import create_aes_ctr_transform
 
 
 @dataclass
@@ -332,9 +332,10 @@ def _try_handshake(handshake: bytes, secret: bytes) -> Optional[Tuple[int, bool,
     dec_key = hashlib.sha256(dec_prekey + secret).digest()
 
     dec_iv_int = int.from_bytes(dec_iv, 'big')
-    decryptor = Cipher(
-        algorithms.AES(dec_key), modes.CTR(dec_iv_int.to_bytes(16, 'big'))
-    ).encryptor()
+    decryptor = create_aes_ctr_transform(
+        dec_key,
+        dec_iv_int.to_bytes(16, 'big'),
+    )
     decrypted = decryptor.update(handshake)
 
     proto_tag = decrypted[PROTO_TAG_POS:PROTO_TAG_POS + 4]
@@ -367,9 +368,7 @@ def _generate_relay_init(proto_tag: bytes, dc_idx: int) -> bytes:
     enc_key = rnd_bytes[SKIP_LEN:SKIP_LEN + PREKEY_LEN]
     enc_iv = rnd_bytes[SKIP_LEN + PREKEY_LEN:SKIP_LEN + PREKEY_LEN + IV_LEN]
 
-    encryptor = Cipher(
-        algorithms.AES(enc_key), modes.CTR(enc_iv)
-    ).encryptor()
+    encryptor = create_aes_ctr_transform(enc_key, enc_iv)
 
     dc_bytes = struct.pack('<h', dc_idx)
     tail_plain = proto_tag + dc_bytes + os.urandom(2)
@@ -393,9 +392,10 @@ class _MsgSplitter:
     __slots__ = ('_dec', '_proto', '_cipher_buf', '_plain_buf', '_disabled')
 
     def __init__(self, relay_init: bytes, proto_int: int):
-        cipher = Cipher(algorithms.AES(relay_init[8:40]),
-                        modes.CTR(relay_init[40:56]))
-        self._dec = cipher.encryptor()
+        self._dec = create_aes_ctr_transform(
+            relay_init[8:40],
+            relay_init[40:56],
+        )
         self._dec.update(ZERO_64)
         self._proto = proto_int
         self._cipher_buf = bytearray()
@@ -897,12 +897,8 @@ async def _handle_client(reader, writer, secret: bytes):
             clt_enc_prekey_iv[:PREKEY_LEN] + secret).digest()
         clt_enc_iv = clt_enc_prekey_iv[PREKEY_LEN:]
 
-        clt_decryptor = Cipher(
-            algorithms.AES(clt_dec_key), modes.CTR(clt_dec_iv)
-        ).encryptor()
-        clt_encryptor = Cipher(
-            algorithms.AES(clt_enc_key), modes.CTR(clt_enc_iv)
-        ).encryptor()
+        clt_decryptor = create_aes_ctr_transform(clt_dec_key, clt_dec_iv)
+        clt_encryptor = create_aes_ctr_transform(clt_enc_key, clt_enc_iv)
 
         # fast-forward client decryptor past the 64-byte init
         clt_decryptor.update(ZERO_64)
@@ -917,12 +913,8 @@ async def _handle_client(reader, writer, secret: bytes):
         relay_dec_key = relay_dec_prekey_iv[:KEY_LEN]
         relay_dec_iv = relay_dec_prekey_iv[KEY_LEN:]
 
-        tg_encryptor = Cipher(
-            algorithms.AES(relay_enc_key), modes.CTR(relay_enc_iv)
-        ).encryptor()
-        tg_decryptor = Cipher(
-            algorithms.AES(relay_dec_key), modes.CTR(relay_dec_iv)
-        ).encryptor()
+        tg_encryptor = create_aes_ctr_transform(relay_enc_key, relay_enc_iv)
+        tg_decryptor = create_aes_ctr_transform(relay_dec_key, relay_dec_iv)
         
         tg_encryptor.update(ZERO_64)
 
