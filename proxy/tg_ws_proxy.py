@@ -843,6 +843,48 @@ def _fallback_ip(dc: int) -> Optional[str]:
     return DC_DEFAULT_IPS.get(dc)
 
 
+async def _try_direct_ws(dc: int, is_media: bool, target: str,
+                         domains: List[str], label: str,
+                         media_tag: str,
+                         ws_timeout: float = 10.0) -> Tuple[Optional[RawWebSocket], bool, bool]:
+    ws = await _ws_pool.get(dc, is_media, target, domains)
+    if ws:
+        log.info("[%s] DC%d%s -> pool hit via %s",
+                 label, dc, media_tag, target)
+        return ws, False, False
+
+    ws_failed_redirect = False
+    all_redirects = True
+
+    for domain in domains:
+        url = f'wss://{domain}/apiws'
+        log.info("[%s] DC%d%s -> %s via %s",
+                 label, dc, media_tag, url, target)
+        try:
+            ws = await RawWebSocket.connect(target, domain, timeout=ws_timeout)
+            all_redirects = False
+            return ws, ws_failed_redirect, all_redirects
+        except WsHandshakeError as exc:
+            _stats.ws_errors += 1
+            if exc.is_redirect:
+                ws_failed_redirect = True
+                log.warning("[%s] DC%d%s got %d from %s -> %s",
+                            label, dc, media_tag,
+                            exc.status_code, domain,
+                            exc.location or '?')
+                continue
+            all_redirects = False
+            log.warning("[%s] DC%d%s WS handshake: %s",
+                        label, dc, media_tag, exc.status_line)
+        except Exception as exc:
+            _stats.ws_errors += 1
+            all_redirects = False
+            log.warning("[%s] DC%d%s WS connect failed: %s",
+                        label, dc, media_tag, exc)
+
+    return None, ws_failed_redirect, all_redirects
+
+
 async def _handle_client(reader, writer, secret: bytes):
     _stats.connections_total += 1
     _stats.connections_active += 1
@@ -953,38 +995,8 @@ async def _handle_client(reader, writer, secret: bytes):
         ws_failed_redirect = False
         all_redirects = True
 
-        ws = await _ws_pool.get(dc, is_media, target, domains)
-        if ws:
-            log.info("[%s] DC%d%s -> pool hit via %s",
-                     label, dc, media_tag, target)
-        else:
-            for domain in domains:
-                url = f'wss://{domain}/apiws'
-                log.info("[%s] DC%d%s -> %s via %s",
-                         label, dc, media_tag, url, target)
-                try:
-                    ws = await RawWebSocket.connect(target, domain,
-                                                    timeout=ws_timeout)
-                    all_redirects = False
-                    break
-                except WsHandshakeError as exc:
-                    _stats.ws_errors += 1
-                    if exc.is_redirect:
-                        ws_failed_redirect = True
-                        log.warning("[%s] DC%d%s got %d from %s -> %s",
-                                    label, dc, media_tag,
-                                    exc.status_code, domain,
-                                    exc.location or '?')
-                        continue
-                    else:
-                        all_redirects = False
-                        log.warning("[%s] DC%d%s WS handshake: %s",
-                                    label, dc, media_tag, exc.status_line)
-                except Exception as exc:
-                    _stats.ws_errors += 1
-                    all_redirects = False
-                    log.warning("[%s] DC%d%s WS connect failed: %s",
-                                label, dc, media_tag, exc)
+        ws, ws_failed_redirect, all_redirects = await _try_direct_ws(
+            dc, is_media, target, domains, label, media_tag, ws_timeout)
 
         # WS failed -> fallback
         if ws is None:
