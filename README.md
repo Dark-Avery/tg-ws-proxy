@@ -14,7 +14,7 @@
 
 Это fork проекта [Flowseal/tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy). В этой ветке fork сохраняет Android-клиент и дальнейшую интеграцию fork-specific функций поверх нового upstream-кода.
 
-**Локальный MTProto-прокси** для Telegram Desktop, который **ускоряет работу Telegram**, перенаправляя трафик через WebSocket-соединения. Данные передаются в том же зашифрованном виде, а для работы не нужны сторонние сервера.
+**Локальный MTProto-прокси** для Telegram Desktop и Android, который **ускоряет работу Telegram**, перенаправляя трафик через WebSocket-соединения. Данные передаются в том же зашифрованном виде, а для работы не нужны сторонние сервера.
 
 <img width="529" height="487" alt="image" src="https://github.com/user-attachments/assets/6a4cf683-0df8-43af-86c1-0e8f08682b62" />
 
@@ -28,7 +28,20 @@ Telegram Desktop → MTProto Proxy (127.0.0.1:1443) → WebSocket → Telegram D
 2. Перехватывает подключения к IP-адресам Telegram
 3. Извлекает DC ID из MTProto obfuscation init-пакета
 4. Устанавливает WebSocket (TLS) соединение к соответствующему DC через домены Telegram
-5. Если WS недоступен (302 redirect) — автоматически переключается на прямое TCP-соединение
+5. Если direct WS недоступен, fork может использовать self-hosted relay и только потом переходить на прямое TCP-соединение
+
+## Relay и Auto fallback
+
+Fork поверх upstream-кода снова поддерживает relay-сценарии:
+
+- `Direct Telegram WS` — только прямой Telegram WebSocket, затем TCP fallback
+- `Auto: direct -> relay -> TCP` — сначала direct WS, затем self-hosted relay, затем TCP
+- `Relay only` — сначала relay, затем TCP
+
+Это позволяет повторно использовать уже настроенный relay server без смены его протокола или переустановки. Подробности по relay:
+
+- [docs/relay.md](https://github.com/Dark-Avery/tg-ws-proxy/blob/main/docs/relay.md)
+- [docs/relay-protocol.md](https://github.com/Dark-Avery/tg-ws-proxy/blob/main/docs/relay-protocol.md)
 
 ## 🚀 Быстрый старт
 
@@ -137,7 +150,7 @@ tg-ws-proxy-tray-linux
 ### Консольный режим из исходников
 
 ```bash
-tg-ws-proxy [--port PORT] [--host HOST] [--dc-ip DC:IP ...] [-v]
+tg-ws-proxy [--port PORT] [--host HOST] [--secret SECRET] [--dc-ip DC:IP ...] [--upstream-mode MODE] [--relay-url URL] [--relay-token TOKEN] [-v]
 ```
 
 ### Android debug APK
@@ -162,6 +175,9 @@ android/app/build/outputs/apk/standard/debug/app-standard-debug.apk
 | `--host` | `127.0.0.1` | Хост прокси |
 | `--secret` | `random` | 32 hex chars secret для авторизации клиентов |
 | `--dc-ip` | `2:149.154.167.220`, `4:149.154.167.220` | Целевой IP для DC (можно указать несколько раз) |
+| `--upstream-mode` | `telegram_ws_direct` | `telegram_ws_direct`, `auto` или `relay_ws` |
+| `--relay-url` | выкл. | Relay WebSocket URL, например `wss://relay.example.com/connect` |
+| `--relay-token` | пусто | Shared auth token для relay |
 | `--buf-kb` | `256` | Размер буфера в КБ
 | `--pool-size` | `4` | Количество заготовленных соединений на каждый DC
 | `--log-file` | выкл. | Путь до файла, в который сохранять логи 
@@ -248,6 +264,9 @@ Tray-приложение хранит данные в:
     "2:149.154.167.220",
     "4:149.154.167.220"
   ],
+  "upstream_mode": "auto",
+  "relay_url": "wss://relay.example.com/connect",
+  "relay_token": "",
   "verbose": false,
   "buf_kb": 256,
   "pool_size": 4,
