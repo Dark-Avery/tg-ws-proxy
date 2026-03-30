@@ -44,14 +44,12 @@ def _normalize_dc_ip_list(dc_ip_list: Iterable[object]) -> list[str]:
     return [str(item).strip() for item in values if str(item).strip()]
 
 
-def start_proxy(app_dir: str, host: str, port: int,
-                dc_ip_list: Iterable[object], upstream_mode: str = "telegram_ws_direct",
-                relay_url: str = "", relay_token: str = "",
-                direct_ws_timeout_seconds: float = 10.0,
-                log_max_mb: float = 5.0,
-                buf_kb: int = 256,
-                pool_size: int = 4,
-                verbose: bool = False) -> str:
+def start_proxy(app_dir: str, host: str, port: int, secret: str,
+                dc_ip_list: Iterable[object], log_max_mb: float = 5.0,
+                buf_kb: int = 256, pool_size: int = 4,
+                verbose: bool = False,
+                upstream_mode: str = "telegram_ws_direct",
+                relay_url: str = "", relay_token: str = "") -> str:
     global _RUNTIME, _LAST_ERROR
 
     with _RUNTIME_LOCK:
@@ -74,11 +72,11 @@ def start_proxy(app_dir: str, host: str, port: int,
         config = {
             "host": host,
             "port": int(port),
+            "secret": str(secret).strip(),
             "dc_ip": _normalize_dc_ip_list(dc_ip_list),
             "upstream_mode": str(upstream_mode or "telegram_ws_direct"),
             "relay_url": str(relay_url or ""),
             "relay_token": str(relay_token or ""),
-            "direct_ws_timeout_seconds": float(direct_ws_timeout_seconds),
             "log_max_mb": float(log_max_mb),
             "buf_kb": int(buf_kb),
             "pool_size": int(pool_size),
@@ -134,7 +132,6 @@ def get_runtime_stats_json() -> str:
         running = bool(_RUNTIME and _RUNTIME.is_proxy_running())
 
     payload = dict(tg_ws_proxy.get_stats_snapshot())
-    payload["last_transport_route"] = payload.get("last_transport_route")
     payload["running"] = running
     payload["last_error"] = _LAST_ERROR
     return json.dumps(payload)

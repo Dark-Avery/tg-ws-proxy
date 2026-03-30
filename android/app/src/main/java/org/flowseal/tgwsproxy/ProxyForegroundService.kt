@@ -181,10 +181,10 @@ class ProxyForegroundService : Service() {
         statusText: String,
     ): NotificationPayload {
         val endpointText = getString(R.string.notification_endpoint, config.host, config.port)
-        val activeRouteText = activeRouteLabel(trafficState.activeRoute)
         val detailsText = getString(
             R.string.notification_details,
-            activeRouteText,
+            routeLabel(trafficState.lastTransportRoute),
+            config.dcIpList.size,
             formatRate(trafficState.upBytesPerSecond),
             formatRate(trafficState.downBytesPerSecond),
             formatBytes(trafficState.totalBytesUp),
@@ -249,7 +249,7 @@ class ProxyForegroundService : Service() {
                 totalBytesUp = current.bytesUp,
                 totalBytesDown = current.bytesDown,
                 running = current.running,
-                activeRoute = current.lastTransportRoute,
+                lastTransportRoute = current.lastTransportRoute,
                 lastError = current.lastError,
             )
         }
@@ -263,17 +263,17 @@ class ProxyForegroundService : Service() {
             totalBytesUp = current.bytesUp,
             totalBytesDown = current.bytesDown,
             running = current.running,
-            activeRoute = current.lastTransportRoute,
+            lastTransportRoute = current.lastTransportRoute,
             lastError = current.lastError,
         )
     }
 
-    private fun activeRouteLabel(routeName: String?): String {
-        return when (routeName) {
+    private fun routeLabel(lastTransportRoute: String?): String {
+        return when (lastTransportRoute) {
+            "telegram_ws_direct" -> getString(R.string.notification_route_direct)
             "relay_ws" -> getString(R.string.notification_route_relay)
-            "telegram_ws_direct" -> getString(R.string.notification_route_direct_ws)
-            "tcp_fallback" -> getString(R.string.notification_route_tcp_fallback)
-            else -> getString(R.string.notification_route_waiting)
+            "tcp_fallback" -> getString(R.string.notification_route_tcp)
+            else -> getString(R.string.notification_route_unknown)
         }
     }
 
@@ -403,6 +403,6 @@ private data class TrafficState(
     val totalBytesUp: Long = 0L,
     val totalBytesDown: Long = 0L,
     val running: Boolean = false,
-    val activeRoute: String? = null,
+    val lastTransportRoute: String? = null,
     val lastError: String? = null,
 )

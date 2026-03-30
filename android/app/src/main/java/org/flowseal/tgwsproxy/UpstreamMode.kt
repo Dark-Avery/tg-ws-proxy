@@ -8,7 +8,10 @@ object UpstreamMode {
     const val AUTO = "auto"
     const val RELAY = "relay_ws"
 
-    data class Option(val value: String, val labelResId: Int)
+    data class Option(
+        val value: String,
+        val labelResId: Int,
+    )
 
     val options = listOf(
         Option(DIRECT, R.string.upstream_mode_direct),
@@ -16,28 +19,21 @@ object UpstreamMode {
         Option(RELAY, R.string.upstream_mode_relay),
     )
 
-    fun normalize(value: String): String {
+    fun normalize(value: String?): String {
         return when (value) {
-            DIRECT, AUTO, RELAY -> value
+            AUTO -> AUTO
+            RELAY -> RELAY
             else -> DIRECT
         }
     }
 
-    fun requiresRelayConfig(value: String): Boolean {
-        val normalized = normalize(value)
-        return normalized == AUTO || normalized == RELAY
+    fun requiresRelayConfig(value: String?): Boolean {
+        return normalize(value) == RELAY
     }
 
-    fun label(context: Context, value: String): String {
-        val normalized = normalize(value)
-        val option = options.firstOrNull { it.value == normalized } ?: options.first()
-        return context.getString(option.labelResId)
-    }
-
-    fun summary(context: Context, value: String, relayUrl: String): String {
-        val normalized = normalize(value)
+    fun summary(context: Context, value: String?, relayUrl: String): String {
         val relayHost = relayHost(relayUrl)
-        return when (normalized) {
+        return when (normalize(value)) {
             AUTO -> {
                 if (relayHost.isNullOrBlank()) {
                     context.getString(R.string.upstream_mode_summary_auto_no_relay)

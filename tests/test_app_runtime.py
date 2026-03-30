@@ -52,15 +52,6 @@ class ProxyAppRuntimeTests(unittest.TestCase):
             self.assertEqual(cfg["port"], 9050)
             self.assertEqual(cfg["host"], "127.0.0.2")
             self.assertEqual(cfg["dc_ip"], DEFAULT_CONFIG["dc_ip"])
-            self.assertEqual(
-                cfg["upstream_mode"], DEFAULT_CONFIG["upstream_mode"])
-            self.assertEqual(cfg["relay_url"], DEFAULT_CONFIG["relay_url"])
-            self.assertEqual(
-                cfg["relay_token"], DEFAULT_CONFIG["relay_token"])
-            self.assertEqual(
-                cfg["direct_ws_timeout_seconds"],
-                DEFAULT_CONFIG["direct_ws_timeout_seconds"],
-            )
             self.assertEqual(cfg["verbose"], DEFAULT_CONFIG["verbose"])
 
     def test_invalid_config_file_falls_back_to_defaults(self):
@@ -104,8 +95,7 @@ class ProxyAppRuntimeTests(unittest.TestCase):
                  DEFAULT_CONFIG["host"],
                  DEFAULT_CONFIG["upstream_mode"],
                  DEFAULT_CONFIG["relay_url"],
-                 DEFAULT_CONFIG["relay_token"],
-                 DEFAULT_CONFIG["direct_ws_timeout_seconds"]))
+                 DEFAULT_CONFIG["relay_token"]))
 
     def test_start_proxy_reports_bad_config(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -128,6 +118,51 @@ class ProxyAppRuntimeTests(unittest.TestCase):
 
             self.assertFalse(started)
             self.assertEqual(errors, ["Ошибка конфигурации:\nbad dc mapping"])
+
+    def test_run_proxy_thread_reports_generic_runtime_error(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            errors = []
+
+            async def fake_run_proxy(stop_event=None, **kwargs):
+                raise RuntimeError("proxy boom")
+
+            runtime = ProxyAppRuntime(
+                Path(tmpdir),
+                on_error=errors.append,
+                run_proxy=fake_run_proxy,
+            )
+
+            runtime._run_proxy_thread(1443, {2: "149.154.167.220"}, "127.0.0.1")
+
+            self.assertEqual(errors, ["proxy boom"])
+
+    def test_run_proxy_thread_reports_port_in_use_case_insensitively(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            errors = []
+
+            async def fake_run_proxy(stop_event=None, **kwargs):
+                raise RuntimeError(
+                    "[Errno 98] error while attempting to bind on address "
+                    "('127.0.0.1', 1443): address already in use"
+                )
+
+            runtime = ProxyAppRuntime(
+                Path(tmpdir),
+                on_error=errors.append,
+                run_proxy=fake_run_proxy,
+            )
+
+            runtime._run_proxy_thread(1443, {2: "149.154.167.220"}, "127.0.0.1")
+
+            self.assertEqual(
+                errors,
+                [
+                    "Не удалось запустить прокси:\n"
+                    "Порт уже используется другим приложением.\n\n"
+                    "Закройте приложение, использующее этот порт, "
+                    "или измените порт в настройках прокси и перезапустите."
+                ],
+            )
 
 
 if __name__ == "__main__":

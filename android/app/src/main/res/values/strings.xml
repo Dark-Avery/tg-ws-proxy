@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">TG WS Proxy</string>
-    <string name="subtitle">Android app for the local Telegram SOCKS5 proxy.</string>
+    <string name="subtitle">Android app for the local Telegram MTProto proxy.</string>
     <string name="status_label">Foreground service</string>
     <string name="status_starting">Starting</string>
     <string name="status_running">Running</string>
@@ -18,7 +18,6 @@
     <string name="system_check_background_restricted">Background restriction: enabled, Android may block long-running work.</string>
     <string name="system_check_oem_note">Some phones also require manual vendor settings such as Autostart, Lock in recents, or Unrestricted battery mode.</string>
     <string name="endpoint_section_label">Proxy endpoint</string>
-    <string name="routing_section_label">Routing</string>
     <string name="advanced_section_label">Advanced</string>
     <string name="actions_section_label">Actions</string>
     <string name="updates_label">Updates</string>
@@ -34,17 +33,16 @@
     <string name="updates_open_release_button">Open Release Page</string>
     <string name="host_hint">Proxy host</string>
     <string name="port_hint">Proxy port</string>
+    <string name="secret_hint">MTProto secret (32 hex characters)</string>
     <string name="dc_ip_hint">DC to IP mappings (one DC:IP per line)</string>
     <string name="upstream_mode_hint">Upstream route mode</string>
     <string name="relay_url_hint">Relay URL</string>
     <string name="relay_token_hint">Relay token</string>
-    <string name="direct_ws_timeout_hint">Direct WS timeout before relay (sec)</string>
     <string name="log_max_mb_hint">Max log size before rotation (MB)</string>
     <string name="buffer_kb_hint">Socket buffer size (KB)</string>
     <string name="pool_size_hint">WS pool size per DC</string>
-    <string name="upstream_status_label">Upstream route</string>
     <string name="upstream_mode_direct">Direct Telegram WS</string>
-    <string name="upstream_mode_auto">Auto: direct -> relay -> TCP</string>
+    <string name="upstream_mode_auto">Auto: direct -&gt; relay -&gt; TCP</string>
     <string name="upstream_mode_relay">Relay only</string>
     <string name="upstream_mode_summary_direct">Uses direct Telegram WebSocket, then direct TCP fallback.</string>
     <string name="upstream_mode_summary_auto">Tries direct Telegram WebSocket first, then relay %1$s, then direct TCP fallback.</string>
@@ -65,19 +63,19 @@
     <string name="settings_saved">Settings saved</string>
     <string name="service_start_requested">Foreground service start requested</string>
     <string name="service_restart_requested">Foreground service restart requested</string>
-    <string name="telegram_not_found">Telegram app was not found for tg://socks.</string>
+    <string name="telegram_not_found">Telegram app was not found for tg://proxy.</string>
     <string name="notification_title">TG WS Proxy</string>
     <string name="notification_channel_name">Proxy service</string>
     <string name="notification_channel_description">Keeps the Telegram proxy service alive in the foreground.</string>
-    <string name="notification_starting">SOCKS5 %1$s:%2$d • starting embedded Python</string>
-    <string name="notification_running">SOCKS5 %1$s:%2$d • proxy active</string>
+    <string name="notification_starting">MTProto %1$s:%2$d • starting embedded Python</string>
+    <string name="notification_running">MTProto %1$s:%2$d • proxy active</string>
     <string name="notification_endpoint">%1$s:%2$d</string>
-    <string name="notification_details">Route: %1$s\nTraffic: ↑ %2$s/s ↓ %3$s/s\nTransferred: ↑ %4$s ↓ %5$s</string>
-    <string name="notification_route_waiting">Waiting for traffic</string>
-    <string name="notification_route_direct_ws">Direct Telegram WS</string>
-    <string name="notification_route_relay">Relay</string>
-    <string name="notification_route_tcp_fallback">Direct TCP fallback</string>
+    <string name="notification_details">Route: %1$s\nDC mappings: %2$d\nTraffic: ↑ %3$s/s ↓ %4$s/s\nTransferred: ↑ %5$s ↓ %6$s</string>
     <string name="notification_action_stop">Stop</string>
+    <string name="notification_route_direct">Direct Telegram WS</string>
+    <string name="notification_route_relay">Relay</string>
+    <string name="notification_route_tcp">Direct TCP fallback</string>
+    <string name="notification_route_unknown">Starting…</string>
     <string name="saved_config_invalid">Saved proxy settings are invalid.</string>
     <string name="proxy_start_failed_generic">Failed to start embedded Python proxy.</string>
     <string name="proxy_runtime_stopped_unexpectedly">Proxy runtime stopped unexpectedly.</string>

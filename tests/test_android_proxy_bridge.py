@@ -1,6 +1,7 @@
 import sys
 import unittest
 import json
+import subprocess
 from pathlib import Path
 
 
@@ -45,16 +46,13 @@ class AndroidProxyBridgeTests(unittest.TestCase):
         snapshot = tg_ws_proxy.get_stats_snapshot()
         snapshot["bytes_up"] = 1536
         snapshot["bytes_down"] = 4096
-        snapshot["last_transport_route"] = "relay_ws"
         tg_ws_proxy._stats.bytes_up = snapshot["bytes_up"]
         tg_ws_proxy._stats.bytes_down = snapshot["bytes_down"]
-        tg_ws_proxy._stats.last_transport_route = snapshot["last_transport_route"]
 
         result = json.loads(android_proxy_bridge.get_runtime_stats_json())
 
         self.assertEqual(result["bytes_up"], 1536)
         self.assertEqual(result["bytes_down"], 4096)
-        self.assertEqual(result["last_transport_route"], "relay_ws")
         self.assertFalse(result["running"])
         self.assertIsNone(result["last_error"])
 
@@ -76,7 +74,7 @@ class AndroidProxyBridgeTests(unittest.TestCase):
             "4:149.154.167.220",
         ])
 
-    def test_start_proxy_saves_relay_runtime_config(self):
+    def test_start_proxy_saves_advanced_runtime_config(self):
         captured = {}
 
         class FakeRuntime:
@@ -110,12 +108,9 @@ class AndroidProxyBridgeTests(unittest.TestCase):
             log_path = android_proxy_bridge.start_proxy(
                 "/tmp/app",
                 "127.0.0.1",
-                1080,
+                1443,
+                "0123456789abcdef0123456789abcdef",
                 ["2:149.154.167.220"],
-                "auto",
-                "wss://relay.example.com/connect",
-                "secret",
-                3.5,
                 7.0,
                 512,
                 6,
@@ -125,13 +120,7 @@ class AndroidProxyBridgeTests(unittest.TestCase):
             android_proxy_bridge.ProxyAppRuntime = original_runtime
 
         self.assertEqual(log_path, "/tmp/proxy.log")
-        self.assertEqual(captured["config"]["upstream_mode"], "auto")
-        self.assertEqual(
-            captured["config"]["relay_url"],
-            "wss://relay.example.com/connect",
-        )
-        self.assertEqual(captured["config"]["relay_token"], "secret")
-        self.assertEqual(captured["config"]["direct_ws_timeout_seconds"], 3.5)
+        self.assertEqual(captured["config"]["secret"], "0123456789abcdef0123456789abcdef")
         self.assertEqual(captured["config"]["log_max_mb"], 7.0)
         self.assertEqual(captured["config"]["buf_kb"], 512)
         self.assertEqual(captured["config"]["pool_size"], 6)
@@ -237,6 +226,38 @@ class AndroidProxyBridgeTests(unittest.TestCase):
         self.assertEqual(result["latest"], "")
         self.assertEqual(result["error"], "")
         self.assertEqual(result["html_url"], "https://example.com/releases/latest")
+
+    def test_android_bridge_import_and_update_status_work_without_cryptography(self):
+        root = Path(__file__).resolve().parents[1]
+        script = f"""
+import importlib.abc
+import sys
+from pathlib import Path
+
+root = Path({str(root)!r})
+sys.path.insert(0, str(root / "android" / "app" / "src" / "main" / "python"))
+sys.path.insert(0, str(root))
+
+class BlockCryptography(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path, target=None):
+        if fullname == "cryptography" or fullname.startswith("cryptography."):
+            raise ModuleNotFoundError("No module named 'cryptography'")
+        return None
+
+sys.meta_path.insert(0, BlockCryptography())
+
+import android_proxy_bridge
+print(android_proxy_bridge.get_update_status_json(False))
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        payload = json.loads(result.stdout.strip())
+        self.assertEqual(payload["current_version"], android_proxy_bridge.__version__)
+        self.assertEqual(payload["error"], "")
 
 
 if __name__ == "__main__":

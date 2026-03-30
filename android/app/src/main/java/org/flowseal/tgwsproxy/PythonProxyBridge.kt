@@ -17,15 +17,15 @@ object PythonProxyBridge {
             File(context.filesDir, "tg-ws-proxy").absolutePath,
             config.host,
             config.port,
+            config.secret,
             config.dcIpList,
-            config.upstreamMode,
-            config.relayUrl,
-            config.relayToken,
-            config.directWsTimeoutSeconds,
             config.logMaxMb,
             config.bufferKb,
             config.poolSize,
             config.verbose,
+            config.upstreamMode,
+            config.relayUrl,
+            config.relayToken,
         ).toString()
     }
 

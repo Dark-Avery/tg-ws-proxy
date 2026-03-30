@@ -142,6 +142,7 @@ class MainActivity : AppCompatActivity() {
     private fun renderConfig(config: ProxyConfig) {
         binding.hostInput.setText(config.host)
         binding.portInput.setText(config.portText)
+        binding.secretInput.setText(config.secretText)
         binding.dcIpInput.setText(config.dcIpText)
         binding.upstreamModeInput.setText(
             upstreamLabelForValue(config.upstreamMode),
@@ -149,7 +150,6 @@ class MainActivity : AppCompatActivity() {
         )
         binding.relayUrlInput.setText(config.relayUrlText)
         binding.relayTokenInput.setText(config.relayTokenText)
-        binding.directWsTimeoutInput.setText(config.directWsTimeoutText)
         binding.logMaxMbInput.setText(config.logMaxMbText)
         binding.bufferKbInput.setText(config.bufferKbText)
         binding.poolSizeInput.setText(config.poolSizeText)
@@ -166,11 +166,11 @@ class MainActivity : AppCompatActivity() {
         return ProxyConfig(
             host = binding.hostInput.text?.toString().orEmpty(),
             portText = binding.portInput.text?.toString().orEmpty(),
+            secretText = binding.secretInput.text?.toString().orEmpty(),
             dcIpText = binding.dcIpInput.text?.toString().orEmpty(),
             upstreamMode = selectedUpstreamModeValue(),
             relayUrlText = binding.relayUrlInput.text?.toString().orEmpty(),
             relayTokenText = binding.relayTokenInput.text?.toString().orEmpty(),
-            directWsTimeoutText = binding.directWsTimeoutInput.text?.toString().orEmpty(),
             logMaxMbText = binding.logMaxMbInput.text?.toString().orEmpty(),
             bufferKbText = binding.bufferKbInput.text?.toString().orEmpty(),
             poolSizeText = binding.poolSizeInput.text?.toString().orEmpty(),
@@ -197,7 +197,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }.getOrElse { exc ->
                 ProxyUpdateStatus(
-                    currentVersion = "unknown",
+                    currentVersion = currentAppVersionName(),
                     error = exc.message ?: exc.javaClass.simpleName,
                 )
             }
@@ -392,19 +392,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderUpstreamConfigState(upstreamMode: String, relayUrl: String) {
         val requiresRelay = UpstreamMode.requiresRelayConfig(upstreamMode)
-        val requiresDirectWsTimeout = UpstreamMode.normalize(upstreamMode) == UpstreamMode.AUTO
         binding.relayUrlLayout.isVisible = requiresRelay
         binding.relayTokenLayout.isVisible = requiresRelay
-        binding.directWsTimeoutLayout.isVisible = requiresDirectWsTimeout
-        binding.upstreamModeHint.text = UpstreamMode.summary(
-            this,
-            upstreamMode,
-            relayUrl,
-        )
-        binding.upstreamStatusValue.text = UpstreamMode.summary(
-            this,
-            upstreamMode,
-            relayUrl,
-        )
+        val summary = UpstreamMode.summary(this, upstreamMode, relayUrl)
+        binding.upstreamModeHint.text = summary
+        binding.upstreamStatusValue.text = summary
     }
 }

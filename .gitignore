@@ -24,6 +24,10 @@ local.properties
 android/.idea/
 android/build/
 android/app/build/
+android/app/build
+relay/relay
+relay/tg-ws-proxy-relay
+relay/dist/
 android/*.jks
 *.keystore
 android/*.keystore.properties

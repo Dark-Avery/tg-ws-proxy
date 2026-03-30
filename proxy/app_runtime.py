@@ -4,6 +4,7 @@ import asyncio as _asyncio
 import json
 import logging
 import logging.handlers
+import os
 import sys
 import threading
 import time
@@ -14,13 +15,13 @@ import proxy.tg_ws_proxy as tg_ws_proxy
 
 
 DEFAULT_CONFIG = {
-    "port": 1080,
+    "port": 1443,
     "host": "127.0.0.1",
+    "secret": os.urandom(16).hex(),
     "dc_ip": ["2:149.154.167.220", "4:149.154.167.220"],
     "upstream_mode": "telegram_ws_direct",
     "relay_url": "",
     "relay_token": "",
-    "direct_ws_timeout_seconds": 10.0,
     "log_max_mb": 5,
     "buf_kb": 256,
     "pool_size": 4,
@@ -51,6 +52,27 @@ class ProxyAppRuntime:
         self.config: dict = {}
         self._proxy_thread = None
         self._async_stop = None
+
+    def _build_core_config(self, active_cfg: dict, dc_opt: Dict[int, str]):
+        port = int(active_cfg.get("port", self.default_config["port"]))
+        host = str(active_cfg.get("host", self.default_config["host"]))
+        secret = str(active_cfg.get("secret") or "").strip()
+        if not secret:
+            secret = os.urandom(16).hex()
+            active_cfg["secret"] = secret
+
+        buf_kb = int(active_cfg.get("buf_kb", self.default_config["buf_kb"]))
+        pool_size = int(active_cfg.get(
+            "pool_size", self.default_config["pool_size"]))
+
+        return tg_ws_proxy.ProxyConfig(
+            port=port,
+            host=host,
+            secret=secret,
+            dc_redirects=dc_opt,
+            buffer_size=max(4, buf_kb) * 1024,
+            pool_size=max(0, pool_size),
+        )
 
     def ensure_dirs(self):
         self.app_dir.mkdir(parents=True, exist_ok=True)
@@ -132,8 +154,7 @@ class ProxyAppRuntime:
                           host: str = "127.0.0.1",
                           upstream_mode: str = "telegram_ws_direct",
                           relay_url: str = "",
-                          relay_token: str = "",
-                          direct_ws_timeout_seconds: float = 10.0):
+                          relay_token: str = ""):
         loop = _asyncio.new_event_loop()
         _asyncio.set_event_loop(loop)
         stop_ev = _asyncio.Event()
@@ -142,20 +163,24 @@ class ProxyAppRuntime:
         try:
             loop.run_until_complete(
                 self.run_proxy(
-                    port, dc_opt, stop_event=stop_ev, host=host,
+                    stop_event=stop_ev,
                     upstream_mode=upstream_mode,
                     relay_url=relay_url or None,
                     relay_token=relay_token,
-                    direct_ws_timeout_seconds=direct_ws_timeout_seconds))
+                )
+            )
         except Exception as exc:
             self.log.error("Proxy thread crashed: %s", exc)
-            if ("10048" in str(exc) or
-                    "Address already in use" in str(exc)):
+            exc_text = str(exc)
+            if ("10048" in exc_text or
+                    "address already in use" in exc_text.lower()):
                 self._emit_error(
                     "Не удалось запустить прокси:\n"
                     "Порт уже используется другим приложением.\n\n"
                     "Закройте приложение, использующее этот порт, "
                     "или измените порт в настройках прокси и перезапустите.")
+            else:
+                self._emit_error(str(exc) or exc.__class__.__name__)
         finally:
             loop.close()
             self._async_stop = None
@@ -176,9 +201,6 @@ class ProxyAppRuntime:
             "relay_url", self.default_config["relay_url"])
         relay_token = active_cfg.get(
             "relay_token", self.default_config["relay_token"])
-        direct_ws_timeout_seconds = active_cfg.get(
-            "direct_ws_timeout_seconds",
-            self.default_config["direct_ws_timeout_seconds"])
         buf_kb = active_cfg.get("buf_kb", self.default_config["buf_kb"])
         pool_size = active_cfg.get(
             "pool_size", self.default_config["pool_size"])
@@ -189,6 +211,9 @@ class ProxyAppRuntime:
             self.log.error("Bad config dc_ip: %s", exc)
             self._emit_error("Ошибка конфигурации:\n%s" % exc)
             return False
+
+        tg_ws_proxy.proxy_config = self._build_core_config(active_cfg, dc_opt)
+        self.save_config(active_cfg)
 
         self.log.info("Starting proxy on %s:%d ...", host, port)
         tg_ws_proxy._RECV_BUF = max(4, buf_kb) * 1024
@@ -203,7 +228,6 @@ class ProxyAppRuntime:
                 upstream_mode,
                 relay_url,
                 relay_token,
-                direct_ws_timeout_seconds,
             ),
             daemon=True,
             name="proxy")

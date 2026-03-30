@@ -22,7 +22,7 @@ keywords = [
     "proxy",
     "bypass",
     "websocket",
-    "socks5",
+    "mtproto",
 ]
 classifiers = [
   "Development Status :: 5 - Production/Stable",
@@ -58,8 +58,8 @@ tg-ws-proxy-tray-macos = "macos:main"
 tg-ws-proxy-tray-linux = "linux:main"
 
 [project.urls]
-Source = "https://github.com/Flowseal/tg-ws-proxy"
-Issues = "https://github.com/Flowseal/tg-ws-proxy/issues"
+Source = "https://github.com/Dark-Avery/tg-ws-proxy"
+Issues = "https://github.com/Dark-Avery/tg-ws-proxy/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["proxy", "ui", "utils"]

@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-import json
-import logging
-import logging.handlers
 import os
-import psutil
 import subprocess
 import sys
 import threading
@@ -12,7 +8,6 @@ import time
 import webbrowser
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse
 
 try:
     import rumps
@@ -31,304 +26,195 @@ except ImportError:
 
 import proxy.tg_ws_proxy as tg_ws_proxy
 from proxy import __version__
-from utils.default_config import default_tray_config
-from proxy.app_runtime import ProxyAppRuntime
 
-APP_NAME = "TgWsProxy"
-APP_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
-FIRST_RUN_MARKER = APP_DIR / ".first_run_done"
-IPV6_WARN_MARKER = APP_DIR / ".ipv6_warned"
+from utils.tray_common import (
+    APP_DIR, APP_NAME, DEFAULT_CONFIG, FIRST_RUN_MARKER, IPV6_WARN_MARKER,
+    LOG_FILE, acquire_lock, apply_proxy_config, ensure_dirs, load_config,
+    log, release_lock, save_config, setup_logging, stop_proxy, tg_proxy_url,
+)
+
 MENUBAR_ICON_PATH = APP_DIR / "menubar_icon.png"
 
-DEFAULT_CONFIG = default_tray_config()
-
+_proxy_thread: Optional[threading.Thread] = None
+_async_stop: Optional[object] = None
 _app: Optional[object] = None
 _config: dict = {}
 _exiting: bool = False
-_lock_file_path: Optional[Path] = None
 
-log = logging.getLogger("tg-ws-tray")
-_runtime = ProxyAppRuntime(
-    APP_DIR,
-    default_config=DEFAULT_CONFIG,
-    logger_name="tg-ws-tray",
-    on_error=lambda text: _show_error(text),
-)
-CONFIG_FILE = _runtime.config_file
-LOG_FILE = _runtime.log_file
-UPSTREAM_MODE_DIRECT = "telegram_ws_direct"
-UPSTREAM_MODE_AUTO = "auto"
-UPSTREAM_MODE_RELAY = "relay_ws"
+# osascript dialogs
 
 
-def _normalize_upstream_mode(value: Optional[str]) -> str:
-    if value in (UPSTREAM_MODE_DIRECT, UPSTREAM_MODE_AUTO, UPSTREAM_MODE_RELAY):
-        return value
-    return UPSTREAM_MODE_DIRECT
+def _esc(text: str) -> str:
+    return text.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def _relay_host(relay_url: Optional[str]) -> Optional[str]:
-    if not relay_url:
+def _osascript(script: str) -> str:
+    r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+    return r.stdout.strip()
+
+
+def _show_error(text: str, title: str = "TG WS Proxy") -> None:
+    _osascript(
+        f'display dialog "{_esc(text)}" with title "{_esc(title)}" '
+        f'buttons {{"OK"}} default button "OK" with icon stop'
+    )
+
+
+def _show_info(text: str, title: str = "TG WS Proxy") -> None:
+    _osascript(
+        f'display dialog "{_esc(text)}" with title "{_esc(title)}" '
+        f'buttons {{"OK"}} default button "OK" with icon note'
+    )
+
+
+def _ask_yes_no(text: str, title: str = "TG WS Proxy") -> bool:
+    return _ask_yes_no_close(text, title) is True
+
+
+def _ask_yes_no_close(text: str, title: str = "TG WS Proxy") -> Optional[bool]:
+    r = subprocess.run(
+        [
+            "osascript", "-e",
+            f'button returned of (display dialog "{_esc(text)}" '
+            f'with title "{_esc(title)}" '
+            f'buttons {{"Закрыть", "Нет", "Да"}} '
+            f'default button "Да" cancel button "Закрыть" with icon note)',
+        ],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
         return None
-    try:
-        return urlparse(relay_url.strip()).hostname
-    except Exception:
+    btn = r.stdout.strip()
+    if btn == "Да":
+        return True
+    if btn == "Нет":
+        return False
+    return None
+
+
+def _osascript_input(prompt: str, default: str, title: str = "TG WS Proxy") -> Optional[str]:
+    r = subprocess.run(
+        [
+            "osascript", "-e",
+            f'text returned of (display dialog "{_esc(prompt)}" '
+            f'default answer "{_esc(default)}" '
+            f'with title "{_esc(title)}" '
+            f'buttons {{"Закрыть", "OK"}} '
+            f'default button "OK" cancel button "Закрыть")',
+        ],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
         return None
+    return r.stdout.rstrip("\r\n")
 
 
-def _upstream_mode_label(value: Optional[str]) -> str:
-    normalized = _normalize_upstream_mode(value)
-    if normalized == UPSTREAM_MODE_AUTO:
-        return "Auto: direct -> relay -> TCP"
-    if normalized == UPSTREAM_MODE_RELAY:
-        return "Relay only"
-    return "Direct Telegram WS"
+# menubar icon
 
-
-def _upstream_mode_summary(value: Optional[str],
-                           relay_url: Optional[str] = None) -> str:
-    normalized = _normalize_upstream_mode(value)
-    relay_host = _relay_host(relay_url)
-    if normalized == UPSTREAM_MODE_AUTO:
-        if relay_host:
-            return (
-                "Сначала direct Telegram WS, затем relay "
-                f"{relay_host}, затем direct TCP fallback."
-            )
-        return (
-            "Сначала direct Telegram WS. Укажите relay URL, "
-            "чтобы добавить relay fallback перед direct TCP."
-        )
-    if normalized == UPSTREAM_MODE_RELAY:
-        if relay_host:
-            return f"Сначала relay {relay_host}, затем direct TCP fallback."
-        return "Сначала relay, затем direct TCP fallback."
-    return "Используется direct Telegram WS, затем direct TCP fallback."
-
-
-def _validate_relay_url(value: str) -> bool:
-    try:
-        parsed = urlparse(value.strip())
-    except Exception:
-        return False
-    return parsed.scheme in ("ws", "wss") and bool(parsed.hostname)
-
-
-def _format_timeout_seconds(value: object) -> str:
-    try:
-        numeric = float(value)
-    except (TypeError, ValueError):
-        numeric = float(DEFAULT_CONFIG["direct_ws_timeout_seconds"])
-    if numeric.is_integer():
-        return str(int(numeric))
-    return str(numeric)
-
-
-# Single-instance lock
-
-def _same_process(lock_meta: dict, proc: psutil.Process) -> bool:
-    try:
-        lock_ct = float(lock_meta.get("create_time", 0.0))
-        proc_ct = float(proc.create_time())
-        if lock_ct > 0 and abs(lock_ct - proc_ct) > 1.0:
-            return False
-    except Exception:
-        return False
-
-    frozen = bool(getattr(sys, "frozen", False))
-    if frozen:
-        return APP_NAME.lower() in proc.name().lower()
-    return False
-
-
-def _release_lock():
-    global _lock_file_path
-    if not _lock_file_path:
-        return
-    try:
-        _lock_file_path.unlink(missing_ok=True)
-    except Exception:
-        pass
-    _lock_file_path = None
-
-
-def _acquire_lock() -> bool:
-    global _lock_file_path
-    _ensure_dirs()
-    lock_files = list(APP_DIR.glob("*.lock"))
-
-    for f in lock_files:
-        pid = None
-        meta: dict = {}
-
-        try:
-            pid = int(f.stem)
-        except Exception:
-            f.unlink(missing_ok=True)
-            continue
-
-        try:
-            raw = f.read_text(encoding="utf-8").strip()
-            if raw:
-                meta = json.loads(raw)
-        except Exception:
-            meta = {}
-
-        try:
-            proc = psutil.Process(pid)
-            if _same_process(meta, proc):
-                return False
-        except Exception:
-            pass
-
-        f.unlink(missing_ok=True)
-
-    lock_file = APP_DIR / f"{os.getpid()}.lock"
-    try:
-        proc = psutil.Process(os.getpid())
-        payload = {"create_time": proc.create_time()}
-        lock_file.write_text(json.dumps(payload, ensure_ascii=False),
-                             encoding="utf-8")
-    except Exception:
-        lock_file.touch()
-
-    _lock_file_path = lock_file
-    return True
-
-
-# Filesystem helpers
-
-def _ensure_dirs():
-    _runtime.ensure_dirs()
-
-
-def load_config() -> dict:
-    return _runtime.load_config()
-
-
-def save_config(cfg: dict):
-    _runtime.save_config(cfg)
-
-
-def setup_logging(verbose: bool = False, log_max_mb: float = 5):
-    _runtime.setup_logging(verbose, log_max_mb=log_max_mb)
-
-
-# Menubar icon
 
 def _make_menubar_icon(size: int = 44):
     if Image is None:
         return None
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-
     margin = size // 11
-    draw.ellipse([margin, margin, size - margin, size - margin],
-                 fill=(0, 0, 0, 255))
-
+    draw.ellipse([margin, margin, size - margin, size - margin], fill=(0, 0, 0, 255))
     try:
-        font = ImageFont.truetype(
-            "/System/Library/Fonts/Helvetica.ttc",
-            size=int(size * 0.55))
+        font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", size=int(size * 0.55))
     except Exception:
         font = ImageFont.load_default()
-
     bbox = draw.textbbox((0, 0), "T", font=font)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    tx = (size - tw) // 2 - bbox[0]
-    ty = (size - th) // 2 - bbox[1]
-    draw.text((tx, ty), "T", fill=(255, 255, 255, 255), font=font)
+    draw.text(
+        ((size - tw) // 2 - bbox[0], (size - th) // 2 - bbox[1]),
+        "T", fill=(255, 255, 255, 255), font=font,
+    )
     return img
 
-# Generate menubar icon PNG if it does not exist.
-def _ensure_menubar_icon():
+
+def _ensure_menubar_icon() -> None:
     if MENUBAR_ICON_PATH.exists():
         return
-    _ensure_dirs()
+    ensure_dirs()
     img = _make_menubar_icon(44)
     if img:
         img.save(str(MENUBAR_ICON_PATH), "PNG")
 
 
-# Native macOS dialogs
+# proxy lifecycle (macOS-local)
 
-def _escape_osascript_text(text: str) -> str:
-    return text.replace('\\', '\\\\').replace('"', '\\"')
-
-
-def _osascript(script: str) -> str:
-    r = subprocess.run(
-        ['osascript', '-e', script],
-        capture_output=True, text=True)
-    return r.stdout.strip()
+import asyncio as _asyncio
 
 
-def _show_error(text: str, title: str = "TG WS Proxy"):
-    text_esc = _escape_osascript_text(text)
-    title_esc = _escape_osascript_text(title)
-    _osascript(
-        f'display dialog "{text_esc}" with title "{title_esc}" '
-        f'buttons {{"OK"}} default button "OK" with icon stop')
+def _run_proxy_thread() -> None:
+    global _async_stop
+    loop = _asyncio.new_event_loop()
+    _asyncio.set_event_loop(loop)
+    stop_ev = _asyncio.Event()
+    _async_stop = (loop, stop_ev)
+    try:
+        loop.run_until_complete(
+            tg_ws_proxy._run(
+                stop_event=stop_ev,
+                upstream_mode=tg_ws_proxy._upstream_mode,
+                relay_url=tg_ws_proxy._relay_url,
+                relay_token=tg_ws_proxy._relay_token,
+            )
+        )
+    except Exception as exc:
+        log.error("Proxy thread crashed: %s", exc)
+        if "Address already in use" in str(exc):
+            _show_error(
+                "Не удалось запустить прокси:\n"
+                "Порт уже используется другим приложением.\n\n"
+                "Закройте приложение, использующее этот порт, "
+                "или измените порт в настройках прокси и перезапустите."
+            )
+    finally:
+        loop.close()
+        _async_stop = None
 
 
-def _show_info(text: str, title: str = "TG WS Proxy"):
-    text_esc = _escape_osascript_text(text)
-    title_esc = _escape_osascript_text(title)
-    _osascript(
-        f'display dialog "{text_esc}" with title "{title_esc}" '
-        f'buttons {{"OK"}} default button "OK" with icon note')
+def _start_proxy() -> None:
+    global _proxy_thread
+    if _proxy_thread and _proxy_thread.is_alive():
+        log.info("Proxy already running")
+        return
+    if not apply_proxy_config(_config):
+        _show_error("Ошибка конфигурации DC → IP.")
+        return
+    pc = tg_ws_proxy.proxy_config
+    log.info("Starting proxy on %s:%d ...", pc.host, pc.port)
+    _proxy_thread = threading.Thread(target=_run_proxy_thread, daemon=True, name="proxy")
+    _proxy_thread.start()
 
 
-def _ask_yes_no(text: str, title: str = "TG WS Proxy") -> bool:
-    result = _ask_yes_no_close(text, title)
-    return result is True
+def _stop_proxy() -> None:
+    global _proxy_thread, _async_stop
+    if _async_stop:
+        loop, stop_ev = _async_stop
+        loop.call_soon_threadsafe(stop_ev.set)
+        if _proxy_thread:
+            _proxy_thread.join(timeout=2)
+    _proxy_thread = None
+    log.info("Proxy stopped")
 
 
-def _ask_yes_no_close(text: str,
-                      title: str = "TG WS Proxy") -> Optional[bool]:
-    text_esc = _escape_osascript_text(text)
-    title_esc = _escape_osascript_text(title)
-    r = subprocess.run(
-        ['osascript', '-e',
-         f'button returned of (display dialog "{text_esc}" '
-         f'with title "{title_esc}" '
-         f'buttons {{"Закрыть", "Нет", "Да"}} '
-         f'default button "Да" cancel button "Закрыть" with icon note)'],
-        capture_output=True, text=True)
-    if r.returncode != 0:
-        return None
-
-    result = r.stdout.strip()
-    if result == "Да":
-        return True
-    if result == "Нет":
-        return False
-    return None
+def _restart_proxy() -> None:
+    log.info("Restarting proxy...")
+    _stop_proxy()
+    time.sleep(0.3)
+    _start_proxy()
 
 
-# Proxy lifecycle
-
-def start_proxy():
-    _runtime.start_proxy(_config)
+# menu callbacks
 
 
-def stop_proxy():
-    _runtime.stop_proxy()
-
-
-def restart_proxy():
-    _runtime.restart_proxy()
-
-
-# Menu callbacks
-
-def _on_open_in_telegram(_=None):
-    host = _config.get("host", DEFAULT_CONFIG["host"])
-    port = _config.get("port", DEFAULT_CONFIG["port"])
-    url = f"tg://socks?server={host}&port={port}"
+def _on_open_in_telegram(_=None) -> None:
+    url = tg_proxy_url(_config)
     log.info("Opening %s", url)
     try:
-        result = subprocess.call(['open', url])
+        result = subprocess.call(["open", url])
         if result != 0:
             raise RuntimeError("open command failed")
     except Exception:
@@ -342,67 +228,58 @@ def _on_open_in_telegram(_=None):
                 if pyperclip:
                     pyperclip.copy(url)
                 else:
-                    subprocess.run(['pbcopy'], input=url.encode(),
-                                   check=True)
+                    subprocess.run(["pbcopy"], input=url.encode(), check=True)
                 _show_info(
                     "Не удалось открыть Telegram автоматически.\n\n"
-                    f"Ссылка скопирована в буфер обмена:\n{url}")
+                    f"Ссылка скопирована в буфер обмена:\n{url}"
+                )
             except Exception as exc:
                 log.error("Clipboard copy failed: %s", exc)
                 _show_error(f"Не удалось скопировать ссылку:\n{exc}")
 
 
-def _on_restart(_=None):
-    def _do_restart():
+def _on_copy_link(_=None) -> None:
+    url = tg_proxy_url(_config)
+    log.info("Copying link: %s", url)
+    try:
+        if pyperclip:
+            pyperclip.copy(url)
+        else:
+            subprocess.run(["pbcopy"], input=url.encode(), check=True)
+    except Exception as exc:
+        log.error("Clipboard copy failed: %s", exc)
+        _show_error(f"Не удалось скопировать ссылку:\n{exc}")
+
+
+def _on_restart(_=None) -> None:
+    def _do():
         global _config
         _config = load_config()
         if _app:
             _app.update_menu_title()
-        restart_proxy()
+        _restart_proxy()
 
-    threading.Thread(target=_do_restart, daemon=True).start()
+    threading.Thread(target=_do, daemon=True).start()
 
 
-def _on_open_logs(_=None):
+def _on_open_logs(_=None) -> None:
     log.info("Opening log file: %s", LOG_FILE)
     if LOG_FILE.exists():
-        subprocess.call(['open', str(LOG_FILE)])
+        subprocess.call(["open", str(LOG_FILE)])
     else:
         _show_info("Файл логов ещё не создан.")
 
-# Show a native text input dialog. Returns None if cancelled.
-def _osascript_input(prompt: str, default: str,
-                     title: str = "TG WS Proxy") -> Optional[str]:
-    prompt_esc = _escape_osascript_text(prompt)
-    default_esc = _escape_osascript_text(default)
-    title_esc = _escape_osascript_text(title)
-    r = subprocess.run(
-        ['osascript', '-e',
-         f'text returned of (display dialog "{prompt_esc}" '
-         f'default answer "{default_esc}" '
-         f'with title "{title_esc}" '
-         f'buttons {{"Закрыть", "OK"}} '
-         f'default button "OK" cancel button "Закрыть")'],
-        capture_output=True, text=True)
-    if r.returncode != 0:
-        return None
-    return r.stdout.rstrip("\r\n")
 
-
-def _on_edit_config(_=None):
+def _on_edit_config(_=None) -> None:
     threading.Thread(target=_edit_config_dialog, daemon=True).start()
 
 
 def _check_updates_menu_title() -> str:
     on = bool(_config.get("check_updates", True))
-    return (
-        "✓ Проверять обновления при запуске"
-        if on
-        else "Проверять обновления при запуске (выкл)"
-    )
+    return "✓ Проверять обновления при запуске" if on else "Проверять обновления при запуске (выкл)"
 
 
-def _toggle_check_updates(_=None):
+def _toggle_check_updates(_=None) -> None:
     global _config
     _config["check_updates"] = not bool(_config.get("check_updates", True))
     save_config(_config)
@@ -410,12 +287,15 @@ def _toggle_check_updates(_=None):
         _app._check_updates_item.title = _check_updates_menu_title()
 
 
-def _on_open_release_page(_=None):
+def _on_open_release_page(_=None) -> None:
     from utils.update_check import RELEASES_PAGE_URL
     webbrowser.open(RELEASES_PAGE_URL)
 
 
-def _maybe_notify_update_async():
+# update check
+
+
+def _maybe_notify_update_async() -> None:
     def _work():
         time.sleep(1.5)
         if _exiting:
@@ -431,8 +311,7 @@ def _maybe_notify_update_async():
             url = (st.get("html_url") or "").strip() or RELEASES_PAGE_URL
             ver = st.get("latest") or "?"
             if _ask_yes_no(
-                f"Доступна новая версия: {ver}\n\n"
-                f"Открыть страницу релиза в браузере?",
+                f"Доступна новая версия: {ver}\n\nОткрыть страницу релиза в браузере?",
                 "TG WS Proxy — обновление",
             ):
                 webbrowser.open(url)
@@ -442,18 +321,16 @@ def _maybe_notify_update_async():
     threading.Thread(target=_work, daemon=True, name="update-check").start()
 
 
-# Settings via native macOS dialogs
-def _edit_config_dialog():
+# settings dialog
+
+
+def _edit_config_dialog() -> None:
     cfg = load_config()
 
-    # Host
-    host = _osascript_input(
-        "IP-адрес прокси:",
-        cfg.get("host", DEFAULT_CONFIG["host"]))
+    host = _osascript_input("IP-адрес прокси:", cfg.get("host", DEFAULT_CONFIG["host"]))
     if host is None:
         return
     host = host.strip()
-
     import socket as _sock
     try:
         _sock.inet_aton(host)
@@ -461,10 +338,7 @@ def _edit_config_dialog():
         _show_error("Некорректный IP-адрес.")
         return
 
-    # Port
-    port_str = _osascript_input(
-        "Порт прокси:",
-        str(cfg.get("port", DEFAULT_CONFIG["port"])))
+    port_str = _osascript_input("Порт прокси:", str(cfg.get("port", DEFAULT_CONFIG["port"])))
     if port_str is None:
         return
     try:
@@ -475,114 +349,90 @@ def _edit_config_dialog():
         _show_error("Порт должен быть числом 1-65535")
         return
 
-    # DC-IP mappings
+    secret_str = _osascript_input(
+        "MTProto Secret (32 hex символа):", cfg.get("secret", DEFAULT_CONFIG["secret"])
+    )
+    if secret_str is None:
+        return
+    secret_str = secret_str.strip().lower()
+    if len(secret_str) != 32 or not all(c in "0123456789abcdef" for c in secret_str):
+        _show_error("Secret должен быть строкой из 32 шестнадцатеричных символов.")
+        return
+
     dc_default = ", ".join(cfg.get("dc_ip", DEFAULT_CONFIG["dc_ip"]))
     dc_str = _osascript_input(
         "DC → IP маппинги (через запятую, формат DC:IP):\n"
         "Например: 2:149.154.167.220, 4:149.154.167.220",
-        dc_default)
+        dc_default,
+    )
     if dc_str is None:
         return
-    dc_lines = [s.strip() for s in dc_str.replace(',', '\n').splitlines()
-                if s.strip()]
+    dc_lines = [s.strip() for s in dc_str.replace(",", "\n").splitlines() if s.strip()]
     try:
         tg_ws_proxy.parse_dc_ip_list(dc_lines)
     except ValueError as e:
         _show_error(str(e))
         return
 
-    mode_default = _normalize_upstream_mode(
-        cfg.get("upstream_mode", DEFAULT_CONFIG["upstream_mode"]))
-    mode_hint = {
-        UPSTREAM_MODE_DIRECT: "direct",
-        UPSTREAM_MODE_AUTO: "auto",
-        UPSTREAM_MODE_RELAY: "relay",
-    }.get(mode_default, "direct")
-    upstream_mode_input = _osascript_input(
+    current_mode = cfg.get("upstream_mode", DEFAULT_CONFIG.get("upstream_mode", "telegram_ws_direct"))
+    mode_prompt = (
         "Режим upstream:\n"
-        "  direct - только direct Telegram WS\n"
-        "  auto   - direct -> relay -> TCP\n"
-        "  relay  - relay -> TCP",
-        mode_hint,
+        "telegram_ws_direct | auto | relay_ws"
     )
-    if upstream_mode_input is None:
-        return
-    mode_key = upstream_mode_input.strip().lower()
-    upstream_mode = {
-        "direct": UPSTREAM_MODE_DIRECT,
-        "auto": UPSTREAM_MODE_AUTO,
-        "relay": UPSTREAM_MODE_RELAY,
-    }.get(mode_key)
+    upstream_mode = _osascript_input(mode_prompt, str(current_mode))
     if upstream_mode is None:
-        _show_error("Режим upstream должен быть direct, auto или relay.")
+        return
+    upstream_mode = upstream_mode.strip()
+    if upstream_mode not in ("telegram_ws_direct", "auto", "relay_ws"):
+        _show_error("Режим upstream должен быть одним из: telegram_ws_direct, auto, relay_ws.")
         return
 
     relay_url = _osascript_input(
-        "Relay URL (оставьте пустым, если relay не нужен):",
-        cfg.get("relay_url", ""),
+        "Relay URL (пусто если не используется):",
+        str(cfg.get("relay_url", DEFAULT_CONFIG.get("relay_url", ""))),
     )
     if relay_url is None:
         return
     relay_url = relay_url.strip()
-    if upstream_mode == UPSTREAM_MODE_RELAY and not relay_url:
-        _show_error("Укажите relay URL для режима Relay only.")
-        return
-    if relay_url and not _validate_relay_url(relay_url):
-        _show_error(
-            "Relay URL должен быть в формате ws://host/path "
-            "или wss://host/path."
-        )
+    if relay_url:
+        try:
+            parsed = urlparse(relay_url)
+        except Exception:
+            parsed = None
+        if parsed is None or parsed.scheme not in ("ws", "wss") or not parsed.hostname:
+            _show_error("Relay URL должен быть в формате ws://host/path или wss://host/path.")
+            return
+
+    if upstream_mode == "relay_ws" and not relay_url:
+        _show_error("Для режима relay_ws нужно указать Relay URL.")
         return
 
     relay_token = _osascript_input(
         "Relay token (можно оставить пустым):",
-        cfg.get("relay_token", ""),
+        str(cfg.get("relay_token", DEFAULT_CONFIG.get("relay_token", ""))),
     )
     if relay_token is None:
         return
     relay_token = relay_token.strip()
 
-    direct_ws_timeout = float(
-        cfg.get(
-            "direct_ws_timeout_seconds",
-            DEFAULT_CONFIG["direct_ws_timeout_seconds"],
-        )
-    )
-    if upstream_mode == UPSTREAM_MODE_AUTO:
-        direct_ws_timeout_input = _osascript_input(
-            "Таймаут direct WS перед relay (в секундах):",
-            _format_timeout_seconds(direct_ws_timeout),
-        )
-        if direct_ws_timeout_input is None:
-            return
-        try:
-            direct_ws_timeout = float(direct_ws_timeout_input.strip())
-            if direct_ws_timeout <= 0:
-                raise ValueError
-        except ValueError:
-            _show_error("Таймаут direct WS должен быть положительным числом.")
-            return
-
-    # Verbose
     verbose = _ask_yes_no_close("Включить подробное логирование (verbose)?")
     if verbose is None:
         return
 
-    # Advanced settings
     adv_str = _osascript_input(
         "Расширенные настройки (буфер KB, WS пул, лог MB):\n"
         "Формат: buf_kb,pool_size,log_max_mb",
         f"{cfg.get('buf_kb', DEFAULT_CONFIG['buf_kb'])},"
         f"{cfg.get('pool_size', DEFAULT_CONFIG['pool_size'])},"
-        f"{cfg.get('log_max_mb', DEFAULT_CONFIG['log_max_mb'])}")
+        f"{cfg.get('log_max_mb', DEFAULT_CONFIG['log_max_mb'])}",
+    )
     if adv_str is None:
         return
 
     adv = {}
     if adv_str:
-        parts = [s.strip() for s in adv_str.split(',')]
-        keys = [("buf_kb", int), ("pool_size", int),
-                ("log_max_mb", float)]
+        parts = [s.strip() for s in adv_str.split(",")]
+        keys = [("buf_kb", int), ("pool_size", int), ("log_max_mb", float)]
         for i, (k, typ) in enumerate(keys):
             if i < len(parts):
                 try:
@@ -593,15 +443,16 @@ def _edit_config_dialog():
     new_cfg = {
         "host": host,
         "port": port,
+        "secret": secret_str,
         "dc_ip": dc_lines,
         "upstream_mode": upstream_mode,
         "relay_url": relay_url,
         "relay_token": relay_token,
-        "direct_ws_timeout_seconds": direct_ws_timeout,
         "verbose": verbose,
         "buf_kb": adv.get("buf_kb", cfg.get("buf_kb", DEFAULT_CONFIG["buf_kb"])),
         "pool_size": adv.get("pool_size", cfg.get("pool_size", DEFAULT_CONFIG["pool_size"])),
         "log_max_mb": adv.get("log_max_mb", cfg.get("log_max_mb", DEFAULT_CONFIG["log_max_mb"])),
+        "check_updates": cfg.get("check_updates", True),
     }
     save_config(new_cfg)
     log.info("Config saved: %s", new_cfg)
@@ -611,21 +462,23 @@ def _edit_config_dialog():
     if _app:
         _app.update_menu_title()
 
-    if _ask_yes_no_close(
-            "Настройки сохранены.\n\nПерезапустить прокси сейчас?"):
-        restart_proxy()
+    if _ask_yes_no_close("Настройки сохранены.\n\nПерезапустить прокси сейчас?"):
+        _restart_proxy()
 
 
-# First-run & IPv6 dialogs
+# first run & ipv6
 
-def _show_first_run():
-    _ensure_dirs()
+
+def _show_first_run() -> None:
+    ensure_dirs()
     if FIRST_RUN_MARKER.exists():
         return
 
     host = _config.get("host", DEFAULT_CONFIG["host"])
     port = _config.get("port", DEFAULT_CONFIG["port"])
-    tg_url = f"tg://socks?server={host}&port={port}"
+    secret = _config.get("secret", DEFAULT_CONFIG["secret"])
+    tg_url = tg_proxy_url(_config)
+    link_host = tg_ws_proxy.get_link_host(host)
 
     text = (
         f"Прокси запущен и работает в строке меню.\n\n"
@@ -635,54 +488,54 @@ def _show_first_run():
         f"  Или ссылка: {tg_url}\n\n"
         f"Вручную:\n"
         f"  Настройки → Продвинутые → Тип подключения → Прокси\n"
-        f"  SOCKS5 → {host} : {port} (без логина/пароля)\n\n"
+        f"  MTProto → {link_host} : {port} \n"
+        f"  Secret: dd{secret} \n\n"
         f"Открыть прокси в Telegram сейчас?"
     )
 
     FIRST_RUN_MARKER.touch()
-
     if _ask_yes_no(text, "TG WS Proxy"):
         _on_open_in_telegram()
 
 
-def _has_ipv6_enabled() -> bool:
-    import socket as _sock
-    try:
-        addrs = _sock.getaddrinfo(_sock.gethostname(), None, _sock.AF_INET6)
-        for addr in addrs:
-            ip = addr[4][0]
-            if ip and not ip.startswith('::1') and not ip.startswith('fe80::1'):
-                return True
-    except Exception:
-        pass
-    try:
-        s = _sock.socket(_sock.AF_INET6, _sock.SOCK_STREAM)
-        s.bind(('::1', 0))
-        s.close()
-        return True
-    except Exception:
-        return False
-
-
-def _check_ipv6_warning():
-    _ensure_dirs()
+def _check_ipv6_warning() -> None:
+    ensure_dirs()
     if IPV6_WARN_MARKER.exists():
         return
-    if not _has_ipv6_enabled():
+
+    import socket as _sock
+    has = False
+    try:
+        for addr in _sock.getaddrinfo(_sock.gethostname(), None, _sock.AF_INET6):
+            ip = addr[4][0]
+            if ip and not ip.startswith("::1") and not ip.startswith("fe80::1"):
+                has = True
+                break
+    except Exception:
+        pass
+    if not has:
+        try:
+            s = _sock.socket(_sock.AF_INET6, _sock.SOCK_STREAM)
+            s.bind(("::1", 0))
+            s.close()
+            has = True
+        except Exception:
+            pass
+    if not has:
         return
 
     IPV6_WARN_MARKER.touch()
-
     _show_info(
         "На вашем компьютере включена поддержка подключения по IPv6.\n\n"
         "Telegram может пытаться подключаться через IPv6, "
         "что не поддерживается и может привести к ошибкам.\n\n"
         "Если прокси не работает, попробуйте отключить "
         "попытку соединения по IPv6 в настройках прокси Telegram.\n\n"
-        "Это предупреждение будет показано только один раз.")
+        "Это предупреждение будет показано только один раз."
+    )
 
 
-# rumps menubar app
+# rumps app
 
 _TgWsProxyAppBase = rumps.App if rumps else object
 
@@ -690,39 +543,26 @@ _TgWsProxyAppBase = rumps.App if rumps else object
 class TgWsProxyApp(_TgWsProxyAppBase):
     def __init__(self):
         _ensure_menubar_icon()
-        icon_path = (str(MENUBAR_ICON_PATH)
-                     if MENUBAR_ICON_PATH.exists() else None)
+        icon_path = str(MENUBAR_ICON_PATH) if MENUBAR_ICON_PATH.exists() else None
 
         host = _config.get("host", DEFAULT_CONFIG["host"])
         port = _config.get("port", DEFAULT_CONFIG["port"])
-        upstream_mode = _config.get("upstream_mode", DEFAULT_CONFIG["upstream_mode"])
-        relay_url = _config.get("relay_url", DEFAULT_CONFIG["relay_url"])
+        link_host = tg_ws_proxy.get_link_host(host)
 
         self._open_tg_item = rumps.MenuItem(
-            f"Открыть в Telegram ({host}:{port})",
-            callback=_on_open_in_telegram)
-        self._route_item = rumps.MenuItem(
-            f"Маршрут: {_upstream_mode_label(upstream_mode)}")
-        self._route_summary_item = rumps.MenuItem(
-            _upstream_mode_summary(upstream_mode, relay_url))
-        self._restart_item = rumps.MenuItem(
-            "Перезапустить прокси",
-            callback=_on_restart)
-        self._settings_item = rumps.MenuItem(
-            "Настройки...",
-            callback=_on_edit_config)
-        self._logs_item = rumps.MenuItem(
-            "Открыть логи",
-            callback=_on_open_logs)
+            f"Открыть в Telegram ({link_host}:{port})", callback=_on_open_in_telegram
+        )
+        self._copy_link_item = rumps.MenuItem("Скопировать ссылку", callback=_on_copy_link)
+        self._restart_item = rumps.MenuItem("Перезапустить прокси", callback=_on_restart)
+        self._settings_item = rumps.MenuItem("Настройки...", callback=_on_edit_config)
+        self._logs_item = rumps.MenuItem("Открыть логи", callback=_on_open_logs)
         self._release_page_item = rumps.MenuItem(
-            "Страница релиза на GitHub…",
-            callback=_on_open_release_page)
+            "Страница релиза на GitHub…", callback=_on_open_release_page
+        )
         self._check_updates_item = rumps.MenuItem(
-            _check_updates_menu_title(),
-            callback=_toggle_check_updates)
-        self._version_item = rumps.MenuItem(
-            f"Версия {__version__}",
-            callback=lambda _: None)
+            _check_updates_menu_title(), callback=_toggle_check_updates
+        )
+        self._version_item = rumps.MenuItem(f"Версия {__version__}", callback=lambda _: None)
 
         super().__init__(
             "TG WS Proxy",
@@ -731,9 +571,7 @@ class TgWsProxyApp(_TgWsProxyAppBase):
             quit_button="Выход",
             menu=[
                 self._open_tg_item,
-                None,
-                self._route_item,
-                self._route_summary_item,
+                self._copy_link_item,
                 None,
                 self._restart_item,
                 self._settings_item,
@@ -743,46 +581,51 @@ class TgWsProxyApp(_TgWsProxyAppBase):
                 self._check_updates_item,
                 None,
                 self._version_item,
-            ])
+            ],
+        )
 
-    def update_menu_title(self):
+    def update_menu_title(self) -> None:
         host = _config.get("host", DEFAULT_CONFIG["host"])
         port = _config.get("port", DEFAULT_CONFIG["port"])
-        upstream_mode = _config.get("upstream_mode", DEFAULT_CONFIG["upstream_mode"])
-        relay_url = _config.get("relay_url", DEFAULT_CONFIG["relay_url"])
-        self._open_tg_item.title = (
-            f"Открыть в Telegram ({host}:{port})")
-        self._route_item.title = f"Маршрут: {_upstream_mode_label(upstream_mode)}"
-        self._route_summary_item.title = _upstream_mode_summary(
-            upstream_mode, relay_url)
+        link_host = tg_ws_proxy.get_link_host(host)
+        self._open_tg_item.title = f"Открыть в Telegram ({link_host}:{port})"
 
 
-def run_menubar():
+# entry point
+
+
+def run_menubar() -> None:
     global _app, _config
 
-    _config = _runtime.prepare()
-    _runtime.reset_log_file()
+    _config = load_config()
+    save_config(_config)
 
-    setup_logging(_config.get("verbose", False),
-                  log_max_mb=_config.get("log_max_mb", DEFAULT_CONFIG["log_max_mb"]))
+    if LOG_FILE.exists():
+        try:
+            LOG_FILE.unlink()
+        except Exception:
+            pass
+
+    setup_logging(
+        _config.get("verbose", False),
+        log_max_mb=_config.get("log_max_mb", DEFAULT_CONFIG["log_max_mb"]),
+    )
     log.info("TG WS Proxy версия %s, menubar app starting", __version__)
     log.info("Config: %s", _config)
     log.info("Log file: %s", LOG_FILE)
 
     if rumps is None or Image is None:
         log.error("rumps or Pillow not installed; running in console mode")
-        start_proxy()
+        _start_proxy()
         try:
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
-            stop_proxy()
+            _stop_proxy()
         return
 
-    start_proxy()
-
+    _start_proxy()
     _maybe_notify_update_async()
-
     _show_first_run()
     _check_ipv6_warning()
 
@@ -790,19 +633,18 @@ def run_menubar():
     log.info("Menubar app running")
     _app.run()
 
-    stop_proxy()
+    _stop_proxy()
     log.info("Menubar app exited")
 
 
-def main():
-    if not _acquire_lock():
+def main() -> None:
+    if not acquire_lock("macos.py"):
         _show_info("Приложение уже запущено.")
         return
-
     try:
         run_menubar()
     finally:
-        _release_lock()
+        release_lock()
 
 
 if __name__ == "__main__":

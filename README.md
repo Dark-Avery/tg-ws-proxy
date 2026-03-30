@@ -12,44 +12,36 @@
 
 # TG WS Proxy
 
-Это fork проекта [Flowseal/tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy), в котором основной фокус сейчас на:
+Это fork проекта [Flowseal/tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy). В этой ветке fork сохраняет Android-клиент и дальнейшую интеграцию fork-specific функций поверх нового upstream-кода.
 
-- Android-релизах и Android-клиенте
-- self-hosted relay и fallback-цепочке `direct WS -> relay -> TCP`
-- практической поддержке домашних relay-сценариев
-
-**Локальный SOCKS5-прокси** для Telegram Desktop и Android, который **ускоряет работу Telegram**, перенаправляя трафик через WebSocket-соединения. Данные передаются в том же зашифрованном виде, а для работы не нужны сторонние сервера.
+**Локальный MTProto-прокси** для Telegram Desktop и Android, который **ускоряет работу Telegram**, перенаправляя трафик через WebSocket-соединения. Данные передаются в том же зашифрованном виде, а для работы не нужны сторонние сервера.
 
 <img width="529" height="487" alt="image" src="https://github.com/user-attachments/assets/6a4cf683-0df8-43af-86c1-0e8f08682b62" />
 
 ## Как это работает
 
 ```
-Telegram Desktop → SOCKS5 (127.0.0.1:1080) → TG WS Proxy → WSS → Telegram DC
+Telegram Desktop → MTProto Proxy (127.0.0.1:1443) → WebSocket → Telegram DC
 ```
 
-1. Приложение поднимает локальный SOCKS5-прокси на `127.0.0.1:1080`
+1. Приложение поднимает MTProto прокси на `127.0.0.1:1443`
 2. Перехватывает подключения к IP-адресам Telegram
 3. Извлекает DC ID из MTProto obfuscation init-пакета
 4. Устанавливает WebSocket (TLS) соединение к соответствующему DC через домены Telegram
-5. Если WS недоступен (302 redirect) — автоматически переключается на прямое TCP-соединение
+5. Если direct WS недоступен, fork может использовать self-hosted relay и только потом переходить на прямое TCP-соединение
 
-Дополнительно поддерживается self-hosted relay как промежуточный маршрут:
+## Relay и Auto fallback
 
-```text
-direct Telegram WS -> relay WS -> direct TCP
-```
+Fork поверх upstream-кода снова поддерживает relay-сценарии:
 
-Это полезно, если direct путь до `kws*.web.telegram.org` плохо работает,
-например на мобильной сети, а в другой сети этот маршрут доступен.
+- `Direct Telegram WS` — только прямой Telegram WebSocket, затем TCP fallback
+- `Auto: direct -> relay -> TCP` — сначала direct WS, затем self-hosted relay, затем TCP
+- `Relay only` — сначала relay, затем TCP
 
-fork дополнительно поддерживает:
+Это позволяет повторно использовать уже настроенный relay server без смены его протокола или переустановки. Подробности по relay:
 
-- настраиваемый timeout прямого `direct WS` перед переключением на relay в
-  режиме `Auto`
-- более агрессивный `Auto`-failover: relay может временно
-  предпочитаться не только при connect-fail, но и после серии явно
-  деградированных media-сессий direct WS
+- [docs/relay.md](https://github.com/Dark-Avery/tg-ws-proxy/blob/main/docs/relay.md)
+- [docs/relay-protocol.md](https://github.com/Dark-Avery/tg-ws-proxy/blob/main/docs/relay-protocol.md)
 
 ## 🚀 Быстрый старт
 
@@ -61,27 +53,11 @@ fork дополнительно поддерживает:
 
 **Меню трея:**
 
-- **Открыть в Telegram** — автоматически настроить прокси через `tg://socks` ссылку
+- **Открыть в Telegram** — автоматически настроить прокси через `tg://proxy` ссылку
 - **Перезапустить прокси** — перезапуск без выхода из приложения
 - **Настройки...** — GUI-редактор конфигурации (в т.ч. версия приложения, опциональная проверка обновлений с GitHub)
 - **Открыть логи** — открыть файл логов
 - **Выход** — остановить прокси и закрыть приложение
-
-### Android
-
-Перейдите на [страницу релизов](https://github.com/Dark-Avery/tg-ws-proxy/releases) и скачайте:
-
-- **`tg-ws-proxy-android-v1.2.3.apk`** для современных 64-bit устройств
-- **`tg-ws-proxy-android-v1.2.3-legacy32.apk`** для 32-bit устройств (`armeabi-v7a`), где обычный APK не ставится с ошибкой `INSTALL_FAILED_NO_MATCHING_ABIS`
-
-После установки:
-
-- откройте приложение
-- проверьте `Android background limits`
-- при необходимости отключите battery optimization и снимите background restrictions
-- нажмите **Start Service**
-- нажмите **Open in Telegram**
-- при необходимости настройте relay mode
 
 При первом запуске после старта может появиться запрос об открытии страницы релиза, если на GitHub вышла новая версия (отключается в настройках).
 
@@ -108,8 +84,9 @@ makepkg -si
 # При помощи AUR-helper
 paru -S tg-ws-proxy-bin
 
-# Если вы установили -cli пакет, то запуск осуществляется через systemctl, где 8888 это номер порта прокси:
-sudo systemctl start tg-ws-proxy-cli@8888
+# Если вы установили -cli пакет, то запуск осуществляется через systemctl, где 8888 это номер порта,
+# разделитель ":" и secret, который можно сгенерировать командой: openssl rand -hex 16
+sudo systemctl start tg-ws-proxy-cli@8888:3075abe65830f0325116bb0416cadf9f
 ```
 
 Для остальных дистрибутивов можно использовать **`TgWsProxy_linux_amd64`** (бинарный файл для x86_64).
@@ -121,11 +98,31 @@ chmod +x TgWsProxy_linux_amd64
 
 При первом запуске откроется окно с инструкцией. Приложение работает в системном трее (требуется AppIndicator).
 
+### Android
+
+Перейдите на [страницу релизов](https://github.com/Dark-Avery/tg-ws-proxy/releases) и скачайте:
+
+- **`tg-ws-proxy-android-vX.Y.Z.apk`** для современных 64-bit устройств
+- **`tg-ws-proxy-android-vX.Y.Z-legacy32.apk`** для 32-bit устройств (`armeabi-v7a`), где обычный APK не ставится с ошибкой `INSTALL_FAILED_NO_MATCHING_ABIS`
+
+После установки:
+
+- откройте приложение
+- проверьте `Android background limits`
+- при необходимости отключите battery optimization и снимите background restrictions
+- нажмите **Start Service**
+- нажмите **Open in Telegram**
+
+Что важно для стабильной работы на Android:
+
+- разрешите уведомления
+- отключите battery optimization для приложения
+
 ## Установка из исходников
 
 ### Консольный proxy
 
-Для запуска только SOCKS5/WebSocket proxy без tray-интерфейса достаточно базовой установки:
+Для запуска только proxy без tray-интерфейса достаточно базовой установки:
 
 ```bash
 pip install -e .
@@ -151,6 +148,12 @@ tg-ws-proxy-tray-macos
 ```bash
 pip install -e .
 tg-ws-proxy-tray-linux
+```
+
+### Консольный режим из исходников
+
+```bash
+tg-ws-proxy [--port PORT] [--host HOST] [--secret SECRET] [--dc-ip DC:IP ...] [--upstream-mode MODE] [--relay-url URL] [--relay-token TOKEN] [-v]
 ```
 
 ### Android debug APK
@@ -205,23 +208,22 @@ android/app/build/outputs/apk/standard/release/app-standard-release.apk
 android/app/build/outputs/apk/legacy32/release/app-legacy32-release.apk
 ```
 
-### Консольный режим из исходников
-
-```bash
-tg-ws-proxy [--port PORT] [--host HOST] [--dc-ip DC:IP ...] [-v]
-```
-
 **Аргументы:**
 
 | Аргумент | По умолчанию | Описание |
 |---|---|---|
-| `--port` | `1080` | Порт SOCKS5-прокси |
-| `--host` | `127.0.0.1` | Хост SOCKS5-прокси |
+| `--port` | `1443` | Порт прокси |
+| `--host` | `127.0.0.1` | Хост прокси |
+| `--secret` | `random` | 32 hex chars secret для авторизации клиентов |
 | `--dc-ip` | `2:149.154.167.220`, `4:149.154.167.220` | Целевой IP для DC (можно указать несколько раз) |
-| `--upstream-mode` | `telegram_ws_direct` | `telegram_ws_direct`, `auto`, `relay_ws` |
-| `--relay-url` | пусто | URL self-hosted relay (`ws://` или `wss://`) |
-| `--relay-token` | пусто | Токен для авторизации на relay |
-| `--direct-ws-timeout-seconds` | `10.0` | Сколько секунд `Auto` ждёт direct WS перед попыткой relay |
+| `--upstream-mode` | `telegram_ws_direct` | `telegram_ws_direct`, `auto` или `relay_ws` |
+| `--relay-url` | выкл. | Relay WebSocket URL, например `wss://relay.example.com/connect` |
+| `--relay-token` | пусто | Shared auth token для relay |
+| `--buf-kb` | `256` | Размер буфера в КБ
+| `--pool-size` | `4` | Количество заготовленных соединений на каждый DC
+| `--log-file` | выкл. | Путь до файла, в который сохранять логи 
+| `--log-max-mb` | `5` | Максимальный размер файла логов в МБ (после идёт перезапись)
+| `--log-backups` | `0` | Количество сохранений логов после перезаписи
 | `-v`, `--verbose` | выкл. | Подробное логирование (DEBUG) |
 
 **Примеры:**
@@ -232,13 +234,6 @@ tg-ws-proxy
 
 # Другой порт и дополнительные DC
 tg-ws-proxy --port 9050 --dc-ip 1:149.154.175.205 --dc-ip 2:149.154.167.220
-
-# Auto mode с relay
-tg-ws-proxy \
-  --upstream-mode auto \
-  --direct-ws-timeout-seconds 4 \
-  --relay-url wss://relay.example.com/connect \
-  --relay-token replace-me
 
 # С подробным логированием
 tg-ws-proxy -v
@@ -268,10 +263,10 @@ tg-ws-proxy-tray-linux = "linux:main"
 
 1. Telegram → **Настройки** → **Продвинутые настройки** → **Тип подключения** → **Прокси**
 2. Добавить прокси:
-   - **Тип:** SOCKS5
-   - **Сервер:** `127.0.0.1`
-   - **Порт:** `1080`
-   - **Логин/Пароль:** оставить пустыми
+   - **Тип:** MTProto
+   - **Сервер:** `127.0.0.1` (или переопределенный вами)
+   - **Порт:** `1443` (или переопределенный вами)
+   - **Secret:** из настроек или логов
 
 ## Настройка Telegram Android
 
@@ -283,10 +278,10 @@ tg-ws-proxy-tray-linux = "linux:main"
 
 1. Telegram → **Настройки** → **Данные и память** → **Настройки прокси**
 2. Добавить прокси:
-   - **Тип:** SOCKS5
+   - **Тип:** MTProto
    - **Сервер:** `127.0.0.1`
-   - **Порт:** `1080`
-   - **Логин/Пароль:** оставить пустыми
+   - **Порт:** `1443`
+   - **Secret:** из настроек приложения
 
 Важно:
 
@@ -304,15 +299,15 @@ Tray-приложение хранит данные в:
 ```json
 {
   "host": "127.0.0.1",
-  "port": 1080,
+  "port": 1443,
+  "secret": "...",
   "dc_ip": [
     "2:149.154.167.220",
     "4:149.154.167.220"
   ],
   "upstream_mode": "auto",
   "relay_url": "wss://relay.example.com/connect",
-  "relay_token": "replace-me",
-  "direct_ws_timeout_seconds": 4.0,
+  "relay_token": "",
   "verbose": false,
   "buf_kb": 256,
   "pool_size": 4,
@@ -322,42 +317,6 @@ Tray-приложение хранит данные в:
 ```
 
 Ключ **`check_updates`** — при `true` при запросе к GitHub сравнивается версия с последним релизом (только уведомление и ссылка на страницу загрузки). На Windows в конфиге может быть **`autostart`** (автозапуск при входе в систему).
-
-Android хранит рабочие файлы в приватной директории приложения. Основные параметры редактируются через UI приложения.
-
-## Relay
-
-Self-hosted relay нужен для сценариев, где direct WebSocket до
-`kws*.web.telegram.org` работает нестабильно, но этот маршрут жив в
-другой сети.
-
-Клиент поддерживает режимы:
-
-- `Direct Telegram WS`
-- `Auto: direct -> relay -> TCP`
-- `Relay only`
-
-В режиме `Auto` сейчас работают два механизма переключения на relay:
-
-- обычный hard-failover, если direct WS не смог подключиться по
-  timeout/SSL/connect error;
-- временное предпочтение relay после серии явно деградированных
-  direct WS media-сессий.
-
-Параметр `direct_ws_timeout_seconds` влияет только на режим `Auto` и
-определяет, сколько ждать попытку direct WS перед переходом к relay.
-
-Краткая инструкция и варианты размещения relay:
-
-- [Relay: запуск и self-host setup](docs/relay.md)
-
-В релизах публикуются relay-бинарники для:
-
-- Windows
-- Linux
-- ARM/ARM64
-- MIPS/MIPS64
-- Android
 
 ## Автоматическая сборка
 
@@ -371,33 +330,6 @@ Self-hosted relay нужен для сценариев, где direct WebSocket 
 - Intel macOS 10.15+
 - Apple Silicon macOS 11.0+
 - Linux x86_64 (требуется AppIndicator для системного трея)
-
-Android-артефакты:
-
-- `tg-ws-proxy-android-vX.Y.Z.apk`
-- `tg-ws-proxy-android-vX.Y.Z-legacy32.apk`
-
-Relay-артефакты:
-
-- `tg-ws-relay-windows-amd64.exe`
-- `tg-ws-relay-linux-amd64`
-- `tg-ws-relay-linux-arm64`
-- `tg-ws-relay-linux-arm-v7`
-- `tg-ws-relay-linux-mips-softfloat`
-- `tg-ws-relay-linux-mipsle-softfloat`
-- `tg-ws-relay-linux-mips64`
-- `tg-ws-relay-linux-mips64le`
-- `tg-ws-relay-android-arm64`
-- `tg-ws-relay-android-arm-v7`
-- `tg-ws-relay-android-amd64`
-
-Для signed Android release в GitHub Actions нужны secrets:
-
-- `ANDROID_KEYSTORE_BASE64`
-- `ANDROID_KEYSTORE_PASSWORD`
-- `ANDROID_KEY_ALIAS`
-- `ANDROID_KEY_PASSWORD`
-
 ## Лицензия
 
 [MIT License](LICENSE)

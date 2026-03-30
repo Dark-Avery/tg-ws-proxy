@@ -1,14 +1,16 @@
 package org.flowseal.tgwsproxy
 
+import java.security.SecureRandom
+
 data class ProxyConfig(
     val host: String = DEFAULT_HOST,
     val portText: String = DEFAULT_PORT.toString(),
+    val secretText: String = DEFAULT_SECRET,
     val dcIpText: String = DEFAULT_DC_IP_LINES.joinToString("\n"),
     val upstreamMode: String = UpstreamMode.DIRECT,
     val relayUrlText: String = "",
     val relayTokenText: String = "",
-    val directWsTimeoutText: String = formatTimeoutSeconds(DEFAULT_DIRECT_WS_TIMEOUT_SECONDS),
-    val logMaxMbText: String = DEFAULT_LOG_MAX_MB.toString(),
+    val logMaxMbText: String = formatDecimal(DEFAULT_LOG_MAX_MB),
     val bufferKbText: String = DEFAULT_BUFFER_KB.toString(),
     val poolSizeText: String = DEFAULT_POOL_SIZE.toString(),
     val checkUpdates: Boolean = false,
@@ -24,6 +26,13 @@ data class ProxyConfig(
             ?: return ValidationResult(errorMessage = "Порт должен быть числом.")
         if (portValue !in 1..65535) {
             return ValidationResult(errorMessage = "Порт должен быть в диапазоне 1-65535.")
+        }
+
+        val secretValue = secretText.trim().lowercase()
+        if (secretValue.length != 32 || !secretValue.all { it in "0123456789abcdef" }) {
+            return ValidationResult(
+                errorMessage = "MTProto secret должен содержать ровно 32 hex-символа."
+            )
         }
 
         val lines = dcIpText
@@ -48,15 +57,13 @@ data class ProxyConfig(
         val upstreamModeValue = UpstreamMode.normalize(upstreamMode)
         val relayUrlValue = relayUrlText.trim()
         val relayTokenValue = relayTokenText.trim()
-        val directWsTimeoutValue = directWsTimeoutText.trim().toDoubleOrNull()
-            ?: return ValidationResult(
-                errorMessage = "Таймаут direct WS должен быть числом."
-            )
-        if (directWsTimeoutValue <= 0.0) {
-            return ValidationResult(
-                errorMessage = "Таймаут direct WS должен быть больше нуля."
-            )
+        if (upstreamModeValue == UpstreamMode.RELAY && relayUrlValue.isEmpty()) {
+            return ValidationResult(errorMessage = "Укажите relay URL для режима Relay only.")
         }
+        if (relayUrlValue.isNotEmpty() && !isRelayUrl(relayUrlValue)) {
+            return ValidationResult(errorMessage = "Relay URL должен быть в формате ws://host/path или wss://host/path.")
+        }
+
         val logMaxMbValue = logMaxMbText.trim().toDoubleOrNull()
             ?: return ValidationResult(
                 errorMessage = "Размер лог-файла должен быть числом."
@@ -66,6 +73,7 @@ data class ProxyConfig(
                 errorMessage = "Размер лог-файла должен быть больше нуля."
             )
         }
+
         val bufferKbValue = bufferKbText.trim().toIntOrNull()
             ?: return ValidationResult(
                 errorMessage = "Буфер сокета должен быть целым числом."
@@ -75,6 +83,7 @@ data class ProxyConfig(
                 errorMessage = "Буфер сокета должен быть не меньше 4 KB."
             )
         }
+
         val poolSizeValue = poolSizeText.trim().toIntOrNull()
             ?: return ValidationResult(
                 errorMessage = "Размер WS pool должен быть целым числом."
@@ -85,22 +94,15 @@ data class ProxyConfig(
             )
         }
 
-        if (upstreamModeValue == UpstreamMode.RELAY && relayUrlValue.isEmpty()) {
-            return ValidationResult(errorMessage = "Укажите relay URL для режима Relay only.")
-        }
-        if (relayUrlValue.isNotEmpty() && !isRelayUrl(relayUrlValue)) {
-            return ValidationResult(errorMessage = "Relay URL должен быть в формате ws://host/path или wss://host/path.")
-        }
-
         return ValidationResult(
             normalized = NormalizedProxyConfig(
                 host = hostValue,
                 port = portValue,
+                secret = secretValue,
                 dcIpList = lines,
                 upstreamMode = upstreamModeValue,
                 relayUrl = relayUrlValue,
                 relayToken = relayTokenValue,
-                directWsTimeoutSeconds = directWsTimeoutValue,
                 logMaxMb = logMaxMbValue,
                 bufferKb = bufferKbValue,
                 poolSize = poolSizeValue,
@@ -112,22 +114,28 @@ data class ProxyConfig(
 
     companion object {
         const val DEFAULT_HOST = "127.0.0.1"
-        const val DEFAULT_PORT = 1080
-        const val DEFAULT_DIRECT_WS_TIMEOUT_SECONDS = 10.0
+        const val DEFAULT_PORT = 1443
         const val DEFAULT_LOG_MAX_MB = 5.0
         const val DEFAULT_BUFFER_KB = 256
         const val DEFAULT_POOL_SIZE = 4
+        val DEFAULT_SECRET = generateSecret()
         val DEFAULT_DC_IP_LINES = listOf(
             "2:149.154.167.220",
             "4:149.154.167.220",
         )
 
-        fun formatTimeoutSeconds(value: Double): String {
+        fun formatDecimal(value: Double): String {
             return if (value % 1.0 == 0.0) {
                 value.toInt().toString()
             } else {
                 value.toString()
             }
+        }
+
+        private fun generateSecret(): String {
+            val bytes = ByteArray(16)
+            SecureRandom().nextBytes(bytes)
+            return bytes.joinToString(separator = "") { "%02x".format(it) }
         }
 
         private fun isIpv4Address(value: String): Boolean {
@@ -163,11 +171,11 @@ data class ValidationResult(
 data class NormalizedProxyConfig(
     val host: String,
     val port: Int,
+    val secret: String,
     val dcIpList: List<String>,
     val upstreamMode: String,
     val relayUrl: String,
     val relayToken: String,
-    val directWsTimeoutSeconds: Double,
     val logMaxMb: Double,
     val bufferKb: Int,
     val poolSize: Int,
