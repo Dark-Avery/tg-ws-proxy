@@ -42,6 +42,10 @@ _upstream_mode = DEFAULT_UPSTREAM_MODE
 _relay_url: Optional[str] = None
 _relay_token = ''
 _direct_ws_timeout_seconds = DEFAULT_DIRECT_WS_TIMEOUT
+DEGRADED_DIRECT_WS_MEDIA_MIN_ELAPSED = 8.0
+DEGRADED_DIRECT_WS_MEDIA_MAX_DOWN = 64 * 1024
+DEGRADED_DIRECT_WS_MEDIA_STREAK = 2
+LAST_GOOD_ROUTE_TTL = 30.0
 
 DC_DEFAULT_IPS: Dict[int, str] = {
     1: '149.154.175.50',
@@ -78,6 +82,8 @@ DC_FAIL_COOLDOWN = 30.0
 WS_FAIL_TIMEOUT = 2.0
 ws_blacklist: Set[Tuple[int, bool]] = set()
 dc_fail_until: Dict[Tuple[int, bool], float] = {}
+last_good_routes: Dict[Tuple[int, bool], Tuple[str, float]] = {}
+degraded_route_streaks: Dict[Tuple[int, bool], int] = {}
 
 _st_BB = struct.Struct('>BB')
 _st_BBH = struct.Struct('>BBH')
@@ -563,6 +569,115 @@ def get_stats_snapshot() -> Dict[str, object]:
     }
 
 
+def _route_cooldown_remaining(dc_key: Tuple[int, bool], now: float) -> float:
+    return max(0.0, dc_fail_until.get(dc_key, 0.0) - now)
+
+
+def _set_route_cooldown(dc_key: Tuple[int, bool], now: float,
+                        cooldown: float = DC_FAIL_COOLDOWN) -> None:
+    dc_fail_until[dc_key] = now + cooldown
+
+
+def _clear_route_cooldown(dc_key: Tuple[int, bool]) -> None:
+    dc_fail_until.pop(dc_key, None)
+
+
+def _route_preference_key(dc: int, is_media: Optional[bool]) -> Tuple[int, bool]:
+    return (dc, is_media if is_media is not None else True)
+
+
+def _get_last_good_route(dc: int, is_media: Optional[bool]) -> Optional[str]:
+    key = _route_preference_key(dc, is_media)
+    data = last_good_routes.get(key)
+    if not data:
+        return None
+    route_name, saved_at = data
+    if time.monotonic() - saved_at > LAST_GOOD_ROUTE_TTL:
+        last_good_routes.pop(key, None)
+        return None
+    return route_name
+
+
+def _set_last_good_route(dc: int, is_media: Optional[bool],
+                         route_name: str) -> None:
+    last_good_routes[_route_preference_key(dc, is_media)] = (
+        route_name, time.monotonic())
+
+
+def configure_route_timing(*,
+                           direct_ws_timeout_seconds: float
+                           = DEFAULT_DIRECT_WS_TIMEOUT) -> None:
+    global _direct_ws_timeout_seconds
+    _direct_ws_timeout_seconds = max(0.5, float(direct_ws_timeout_seconds))
+
+
+def _ordered_transport_routes(dc: int,
+                              is_media: Optional[bool]) -> List[str]:
+    if _upstream_mode == 'relay_ws':
+        return ['relay_ws'] if _relay_url else []
+    if _upstream_mode != 'auto':
+        return ['telegram_ws_direct']
+
+    routes = ['telegram_ws_direct']
+    if _relay_url:
+        routes.append('relay_ws')
+
+    preferred = _get_last_good_route(dc, is_media)
+    if preferred in routes and preferred != routes[0]:
+        routes = [preferred] + [route for route in routes if route != preferred]
+
+    if _relay_url and _route_cooldown_remaining((dc, bool(is_media)), time.monotonic()) > 0:
+        routes = ['relay_ws'] + [route for route in routes if route != 'relay_ws']
+
+    return routes
+
+
+def _record_route_session_result(label: str,
+                                 route_name: Optional[str],
+                                 dc: Optional[int],
+                                 is_media: bool,
+                                 elapsed: float,
+                                 down_bytes: int) -> None:
+    if (
+        route_name != 'telegram_ws_direct'
+        or _upstream_mode != 'auto'
+        or dc is None
+        or not is_media
+    ):
+        return
+
+    dc_key = (dc, True)
+    degraded = (
+        elapsed >= DEGRADED_DIRECT_WS_MEDIA_MIN_ELAPSED
+        and down_bytes < DEGRADED_DIRECT_WS_MEDIA_MAX_DOWN
+    )
+    if not degraded:
+        degraded_route_streaks.pop(dc_key, None)
+        return
+
+    streak = degraded_route_streaks.get(dc_key, 0) + 1
+    if streak >= DEGRADED_DIRECT_WS_MEDIA_STREAK:
+        _set_route_cooldown(dc_key, time.monotonic())
+        degraded_route_streaks.pop(dc_key, None)
+        log.info(
+            "[%s] DC%d media direct WS degraded (%s in %.1fs) -> prefer relay for %ds",
+            label,
+            dc,
+            _human_bytes(down_bytes),
+            elapsed,
+            int(DC_FAIL_COOLDOWN),
+        )
+        return
+    degraded_route_streaks[dc_key] = streak
+
+
+def reset_route_fail_states() -> None:
+    ws_blacklist.clear()
+    dc_fail_until.clear()
+    last_good_routes.clear()
+    degraded_route_streaks.clear()
+
+
 class _WsPool:
     WS_POOL_MAX_AGE = 120.0
     
@@ -766,6 +881,7 @@ async def _bridge_ws_reencrypt(reader, writer, ws: RawWebSocket, label,
 
     tasks = [asyncio.create_task(tcp_to_ws()),
              asyncio.create_task(ws_to_tcp())]
+    elapsed = 0.0
     try:
         await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     finally:
@@ -792,6 +908,7 @@ async def _bridge_ws_reencrypt(reader, writer, ws: RawWebSocket, label,
             await writer.wait_closed()
         except BaseException:
             pass
+    return elapsed, down_bytes
 
 
 async def _bridge_tcp_reencrypt(reader, writer, remote_reader, remote_writer,
@@ -1093,46 +1210,54 @@ async def _handle_client(reader, writer, secret: bytes):
                             label, dc, media_tag)
             return
 
-        now = time.monotonic()
-        fail_until = dc_fail_until.get(dc_key, 0)
-        ws_timeout = WS_FAIL_TIMEOUT if now < fail_until else (
-            _direct_ws_timeout_seconds if _upstream_mode == 'auto' else 10.0
-        )
-
         domains = _ws_domains(dc, is_media)
         target = proxy_config.dc_redirects[dc]
         ws = None
         transport_route = None
         ws_failed_redirect = False
         all_redirects = True
+        route_order = _ordered_transport_routes(dc, is_media)
+        now = time.monotonic()
+        remaining = _route_cooldown_remaining(dc_key, now)
+        ws_timeout = (
+            WS_FAIL_TIMEOUT if remaining > 0 else
+            (_direct_ws_timeout_seconds if _upstream_mode == 'auto' else 10.0)
+        )
 
-        if _upstream_mode != 'relay_ws':
-            ws, ws_failed_redirect, all_redirects = await _try_direct_ws(
-                dc, is_media, target, domains, label, media_tag, ws_timeout)
-            if ws is not None:
-                transport_route = "telegram_ws_direct"
+        for route_name in route_order:
+            if route_name == 'telegram_ws_direct':
+                ws, ws_failed_redirect, all_redirects = await _try_direct_ws(
+                    dc, is_media, target, domains, label, media_tag, ws_timeout)
+                if ws is not None:
+                    transport_route = route_name
+                    _set_last_good_route(dc, is_media, route_name)
+                    _clear_route_cooldown(dc_key)
+                    break
+                continue
 
-        if ws is None and _upstream_mode in ('auto', 'relay_ws') and _relay_url:
-            try:
-                ws = await _try_relay_ws(
-                    dc, is_media, target, domains, label, media_tag,
-                    _relay_url, _relay_token)
-                transport_route = "relay_ws"
-            except Exception as exc:
-                _stats.ws_errors += 1
-                log.warning("[%s] DC%d%s relay connect failed: %s",
-                            label, dc, media_tag, exc)
+            if route_name == 'relay_ws' and _relay_url:
+                try:
+                    ws = await _try_relay_ws(
+                        dc, is_media, target, domains, label, media_tag,
+                        _relay_url, _relay_token)
+                    transport_route = route_name
+                    _set_last_good_route(dc, is_media, route_name)
+                    break
+                except Exception as exc:
+                    _stats.ws_errors += 1
+                    log.warning("[%s] DC%d%s relay connect failed: %s",
+                                label, dc, media_tag, exc)
 
         if ws is None:
-            if _upstream_mode != 'relay_ws':
+            if 'telegram_ws_direct' in route_order:
                 if ws_failed_redirect and all_redirects:
                     ws_blacklist.add(dc_key)
                     log.warning("[%s] DC%d%s blacklisted for WS (all 302)",
                                 label, dc, media_tag)
                 elif ws_failed_redirect:
-                    dc_fail_until[dc_key] = now + DC_FAIL_COOLDOWN
+                    _set_route_cooldown(dc_key, now)
                 else:
-                    dc_fail_until[dc_key] = now + DC_FAIL_COOLDOWN
+                    _set_route_cooldown(dc_key, now)
                     log.info("[%s] DC%d%s WS cooldown for %ds",
                              label, dc, media_tag, int(DC_FAIL_COOLDOWN))
 
@@ -1151,8 +1276,6 @@ async def _handle_client(reader, writer, secret: bytes):
                          label, dc, media_tag)
             return
 
-        if transport_route == "telegram_ws_direct":
-            dc_fail_until.pop(dc_key, None)
         _stats.connections_ws += 1
         _stats.last_transport_route = transport_route or "telegram_ws_direct"
 
@@ -1166,13 +1289,16 @@ async def _handle_client(reader, writer, secret: bytes):
 
         await ws.send(relay_init)
 
-        await _bridge_ws_reencrypt(reader, writer, ws, label,
-                                   dc=dc, is_media=is_media,
-                                   clt_decryptor=clt_decryptor,
-                                   clt_encryptor=clt_encryptor,
-                                   tg_encryptor=tg_encryptor,
-                                   tg_decryptor=tg_decryptor,
-                                   splitter=splitter)
+        elapsed, down_bytes = await _bridge_ws_reencrypt(
+            reader, writer, ws, label,
+            dc=dc, is_media=is_media,
+            clt_decryptor=clt_decryptor,
+            clt_encryptor=clt_encryptor,
+            tg_encryptor=tg_encryptor,
+            tg_decryptor=tg_decryptor,
+            splitter=splitter)
+        _record_route_session_result(
+            label, transport_route, dc, is_media, elapsed, down_bytes)
 
     except asyncio.TimeoutError:
         log.warning("[%s] timeout during handshake", label)
@@ -1212,7 +1338,9 @@ async def _run(stop_event: Optional[asyncio.Event] = None,
     _upstream_mode = upstream_mode
     _relay_url = relay_url
     _relay_token = relay_token
-    _direct_ws_timeout_seconds = max(0.5, float(direct_ws_timeout_seconds))
+    configure_route_timing(
+        direct_ws_timeout_seconds=direct_ws_timeout_seconds)
+    reset_route_fail_states()
 
     secret_bytes = bytes.fromhex(proxy_config.secret)
 
