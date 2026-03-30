@@ -100,7 +100,10 @@ chmod +x TgWsProxy_linux_amd64
 
 ### Android
 
-Перейдите на [страницу релизов](https://github.com/Dark-Avery/tg-ws-proxy/releases) и скачайте подписанный APK вида **`tg-ws-proxy-android-vX.Y.Z.apk`**.
+Перейдите на [страницу релизов](https://github.com/Dark-Avery/tg-ws-proxy/releases) и скачайте:
+
+- **`tg-ws-proxy-android-vX.Y.Z.apk`** для современных 64-bit устройств
+- **`tg-ws-proxy-android-vX.Y.Z-legacy32.apk`** для 32-bit устройств (`armeabi-v7a`), где обычный APK не ставится с ошибкой `INSTALL_FAILED_NO_MATCHING_ABIS`
 
 После установки:
 
@@ -165,6 +168,44 @@ tg-ws-proxy [--port PORT] [--host HOST] [--secret SECRET] [--dc-ip DC:IP ...] [-
 
 ```text
 android/app/build/outputs/apk/standard/debug/app-standard-debug.apk
+```
+
+Legacy32 debug-сборка:
+
+```bash
+./android/build-local-debug.sh assembleLegacy32Debug
+```
+
+Результат:
+
+```text
+android/app/build/outputs/apk/legacy32/debug/app-legacy32-debug.apk
+```
+
+### Android signed release APK
+
+Для локальной release-сборки нужен keystore и переменные окружения:
+
+```bash
+export ANDROID_KEYSTORE_FILE=/path/to/tg-ws-proxy-release.keystore
+export ANDROID_KEYSTORE_PASSWORD=...
+export ANDROID_KEY_ALIAS=tg-ws-proxy
+export ANDROID_KEY_PASSWORD=...
+```
+
+Сборка:
+
+```bash
+cd android
+./build-local-debug.sh assembleStandardRelease
+./build-local-debug.sh assembleLegacy32Release
+```
+
+Результат:
+
+```text
+android/app/build/outputs/apk/standard/release/app-standard-release.apk
+android/app/build/outputs/apk/legacy32/release/app-legacy32-release.apk
 ```
 
 **Аргументы:**
