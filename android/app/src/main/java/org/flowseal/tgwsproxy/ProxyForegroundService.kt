@@ -183,6 +183,7 @@ class ProxyForegroundService : Service() {
         val endpointText = getString(R.string.notification_endpoint, config.host, config.port)
         val detailsText = getString(
             R.string.notification_details,
+            routeLabel(trafficState.lastTransportRoute),
             config.dcIpList.size,
             formatRate(trafficState.upBytesPerSecond),
             formatRate(trafficState.downBytesPerSecond),
@@ -248,6 +249,7 @@ class ProxyForegroundService : Service() {
                 totalBytesUp = current.bytesUp,
                 totalBytesDown = current.bytesDown,
                 running = current.running,
+                lastTransportRoute = current.lastTransportRoute,
                 lastError = current.lastError,
             )
         }
@@ -261,8 +263,18 @@ class ProxyForegroundService : Service() {
             totalBytesUp = current.bytesUp,
             totalBytesDown = current.bytesDown,
             running = current.running,
+            lastTransportRoute = current.lastTransportRoute,
             lastError = current.lastError,
         )
+    }
+
+    private fun routeLabel(lastTransportRoute: String?): String {
+        return when (lastTransportRoute) {
+            "telegram_ws_direct" -> getString(R.string.notification_route_direct)
+            "relay_ws" -> getString(R.string.notification_route_relay)
+            "tcp_fallback" -> getString(R.string.notification_route_tcp)
+            else -> getString(R.string.notification_route_unknown)
+        }
     }
 
     private fun formatRate(bytesPerSecond: Long): String = formatBytes(bytesPerSecond)
@@ -391,5 +403,6 @@ private data class TrafficState(
     val totalBytesUp: Long = 0L,
     val totalBytesDown: Long = 0L,
     val running: Boolean = false,
+    val lastTransportRoute: String? = null,
     val lastError: String? = null,
 )

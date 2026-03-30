@@ -6,11 +6,13 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
+import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -25,6 +27,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var settingsStore: ProxySettingsStore
     private var currentUpdateStatus: ProxyUpdateStatus? = null
+    private val upstreamModeOptions by lazy {
+        UpstreamMode.options.map { option ->
+            option.value to getString(option.labelResId)
+        }
+    }
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -59,6 +66,13 @@ class MainActivity : AppCompatActivity() {
         }
         binding.openAppSettingsButton.setOnClickListener {
             AndroidSystemStatus.openAppSettings(this)
+        }
+        setupUpstreamModeDropdown()
+        binding.relayUrlInput.doAfterTextChanged {
+            renderUpstreamConfigState(
+                selectedUpstreamModeValue(),
+                it?.toString().orEmpty(),
+            )
         }
 
         val config = settingsStore.load()
@@ -130,12 +144,22 @@ class MainActivity : AppCompatActivity() {
         binding.portInput.setText(config.portText)
         binding.secretInput.setText(config.secretText)
         binding.dcIpInput.setText(config.dcIpText)
+        binding.upstreamModeInput.setText(
+            upstreamLabelForValue(config.upstreamMode),
+            false,
+        )
+        binding.relayUrlInput.setText(config.relayUrlText)
+        binding.relayTokenInput.setText(config.relayTokenText)
         binding.logMaxMbInput.setText(config.logMaxMbText)
         binding.bufferKbInput.setText(config.bufferKbText)
         binding.poolSizeInput.setText(config.poolSizeText)
         binding.checkUpdatesSwitch.isChecked = config.checkUpdates
         binding.verboseSwitch.isChecked = config.verbose
         renderUpdateStatus(currentUpdateStatus, config.checkUpdates)
+        renderUpstreamConfigState(
+            config.upstreamMode,
+            config.relayUrlText,
+        )
     }
 
     private fun collectConfigFromForm(): ProxyConfig {
@@ -144,6 +168,9 @@ class MainActivity : AppCompatActivity() {
             portText = binding.portInput.text?.toString().orEmpty(),
             secretText = binding.secretInput.text?.toString().orEmpty(),
             dcIpText = binding.dcIpInput.text?.toString().orEmpty(),
+            upstreamMode = selectedUpstreamModeValue(),
+            relayUrlText = binding.relayUrlInput.text?.toString().orEmpty(),
+            relayTokenText = binding.relayTokenInput.text?.toString().orEmpty(),
             logMaxMbText = binding.logMaxMbInput.text?.toString().orEmpty(),
             bufferKbText = binding.bufferKbInput.text?.toString().orEmpty(),
             poolSizeText = binding.poolSizeInput.text?.toString().orEmpty(),
@@ -267,6 +294,13 @@ class MainActivity : AppCompatActivity() {
                             config.port,
                         )
                     }
+                    if (config != null) {
+                        binding.upstreamStatusValue.text = UpstreamMode.summary(
+                            this@MainActivity,
+                            config.upstreamMode,
+                            config.relayUrl,
+                        )
+                    }
                 }
             }
         }
@@ -326,5 +360,42 @@ class MainActivity : AppCompatActivity() {
             return
         }
         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    private fun setupUpstreamModeDropdown() {
+        val adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_list_item_1,
+            upstreamModeOptions.map { it.second },
+        )
+        binding.upstreamModeInput.setAdapter(adapter)
+        binding.upstreamModeInput.setOnItemClickListener { _, _, _, _ ->
+            renderUpstreamConfigState(
+                selectedUpstreamModeValue(),
+                binding.relayUrlInput.text?.toString().orEmpty(),
+            )
+        }
+    }
+
+    private fun upstreamLabelForValue(value: String): String {
+        return upstreamModeOptions.firstOrNull { it.first == UpstreamMode.normalize(value) }
+            ?.second
+            ?: upstreamModeOptions.first().second
+    }
+
+    private fun selectedUpstreamModeValue(): String {
+        val selectedLabel = binding.upstreamModeInput.text?.toString().orEmpty()
+        return upstreamModeOptions.firstOrNull { it.second == selectedLabel }
+            ?.first
+            ?: UpstreamMode.DIRECT
+    }
+
+    private fun renderUpstreamConfigState(upstreamMode: String, relayUrl: String) {
+        val requiresRelay = UpstreamMode.requiresRelayConfig(upstreamMode)
+        binding.relayUrlLayout.isVisible = requiresRelay
+        binding.relayTokenLayout.isVisible = requiresRelay
+        val summary = UpstreamMode.summary(this, upstreamMode, relayUrl)
+        binding.upstreamModeHint.text = summary
+        binding.upstreamStatusValue.text = summary
     }
 }

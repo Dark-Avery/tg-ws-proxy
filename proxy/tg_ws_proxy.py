@@ -9,9 +9,11 @@ import struct
 import asyncio
 import hashlib
 import argparse
+import json
 import logging
 import logging.handlers
 import socket as _socket
+from urllib.parse import urlparse
 
 from collections import deque
 from dataclasses import dataclass, field
@@ -33,6 +35,11 @@ class ProxyConfig:
 
 proxy_config = ProxyConfig()
 log = logging.getLogger('tg-mtproto-proxy')
+
+DEFAULT_UPSTREAM_MODE = 'telegram_ws_direct'
+_upstream_mode = DEFAULT_UPSTREAM_MODE
+_relay_url: Optional[str] = None
+_relay_token = ''
 
 DC_DEFAULT_IPS: Dict[int, str] = {
     1: '149.154.175.50',
@@ -156,23 +163,35 @@ class RawWebSocket:
 
     @staticmethod
     async def connect(ip: str, domain: str, path: str = '/apiws',
-                      timeout: float = 10.0) -> 'RawWebSocket':
+                      timeout: float = 10.0, port: int = 443,
+                      use_tls: bool = True,
+                      subprotocol: Optional[str] = 'binary') -> 'RawWebSocket':
         reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(ip, 443, ssl=_ssl_ctx,
-                                    server_hostname=domain),
+            asyncio.open_connection(
+                ip,
+                port,
+                ssl=_ssl_ctx if use_tls else None,
+                server_hostname=domain if use_tls else None,
+            ),
             timeout=min(timeout, 10))
         _set_sock_opts(writer.transport)
 
         ws_key = base64.b64encode(os.urandom(16)).decode()
+        host_header = domain if (use_tls and port == 443) or (not use_tls and port == 80) else f'{domain}:{port}'
+        subprotocol_header = (
+            f'Sec-WebSocket-Protocol: {subprotocol}\r\n'
+            if subprotocol else ''
+        )
+        origin = 'https://web.telegram.org' if use_tls else 'http://web.telegram.org'
         req = (
             f'GET {path} HTTP/1.1\r\n'
-            f'Host: {domain}\r\n'
+            f'Host: {host_header}\r\n'
             f'Upgrade: websocket\r\n'
             f'Connection: Upgrade\r\n'
             f'Sec-WebSocket-Key: {ws_key}\r\n'
             f'Sec-WebSocket-Version: 13\r\n'
-            f'Sec-WebSocket-Protocol: binary\r\n'
-            f'Origin: https://web.telegram.org\r\n'
+            f'{subprotocol_header}'
+            f'Origin: {origin}\r\n'
             f'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
             f'AppleWebKit/537.36 (KHTML, like Gecko) '
             f'Chrome/131.0.0.0 Safari/537.36\r\n'
@@ -885,6 +904,84 @@ async def _try_direct_ws(dc: int, is_media: bool, target: str,
     return None, ws_failed_redirect, all_redirects
 
 
+def _parse_relay_url(relay_url: str) -> Dict[str, object]:
+    parsed = urlparse(relay_url)
+    if parsed.scheme not in ('ws', 'wss'):
+        raise ValueError("relay_url must start with ws:// or wss://")
+    if not parsed.hostname:
+        raise ValueError("relay_url must include a hostname")
+    path = parsed.path or '/connect'
+    if parsed.query:
+        path = f'{path}?{parsed.query}'
+    return {
+        'host': parsed.hostname,
+        'port': parsed.port or (443 if parsed.scheme == 'wss' else 80),
+        'use_tls': parsed.scheme == 'wss',
+        'path': path,
+        'domain': parsed.hostname,
+    }
+
+
+def _build_relay_handshake(dc: int, is_media: bool,
+                           target_ip: str, relay_token: str,
+                           domains: List[str]) -> str:
+    payload = {
+        'version': 1,
+        'auth_token': relay_token,
+        'mode': 'telegram_ws',
+        'dc': dc,
+        'media': bool(is_media),
+        'target_ip': target_ip,
+        'domains': domains,
+    }
+    return json.dumps(payload, separators=(',', ':'))
+
+
+async def _try_relay_ws(dc: int, is_media: bool, target: str,
+                        domains: List[str], label: str,
+                        media_tag: str, relay_url: str,
+                        relay_token: str) -> Optional[RawWebSocket]:
+    relay_endpoint = _parse_relay_url(relay_url)
+    public_url = "%s://%s:%d%s" % (
+        'wss' if relay_endpoint['use_tls'] else 'ws',
+        relay_endpoint['host'],
+        relay_endpoint['port'],
+        relay_endpoint['path'],
+    )
+    log.info("[%s] DC%d%s -> relay %s", label, dc, media_tag, public_url)
+
+    ws = None
+    try:
+        ws = await RawWebSocket.connect(
+            relay_endpoint['host'],
+            relay_endpoint['domain'],
+            path=relay_endpoint['path'],
+            timeout=10,
+            port=int(relay_endpoint['port']),
+            use_tls=bool(relay_endpoint['use_tls']),
+            subprotocol='binary',
+        )
+        await ws.send_text(_build_relay_handshake(
+            dc, is_media, target, relay_token, domains))
+        response_payload = await asyncio.wait_for(ws.recv(), timeout=10)
+        if response_payload is None:
+            raise ConnectionError("relay closed during handshake")
+        response = json.loads(response_payload.decode('utf-8'))
+        if not response.get('ok'):
+            raise ConnectionError(
+                "relay handshake failed: %s: %s" % (
+                    response.get('error_code', 'unknown'),
+                    response.get('error_message', '(no message)')))
+        return ws
+    except Exception:
+        if ws is not None:
+            try:
+                await ws.close()
+            except Exception:
+                pass
+        raise
+
+
 async def _handle_client(reader, writer, secret: bytes):
     _stats.connections_total += 1
     _stats.connections_active += 1
@@ -992,24 +1089,39 @@ async def _handle_client(reader, writer, secret: bytes):
         domains = _ws_domains(dc, is_media)
         target = proxy_config.dc_redirects[dc]
         ws = None
+        transport_route = None
         ws_failed_redirect = False
         all_redirects = True
 
-        ws, ws_failed_redirect, all_redirects = await _try_direct_ws(
-            dc, is_media, target, domains, label, media_tag, ws_timeout)
+        if _upstream_mode != 'relay_ws':
+            ws, ws_failed_redirect, all_redirects = await _try_direct_ws(
+                dc, is_media, target, domains, label, media_tag, ws_timeout)
+            if ws is not None:
+                transport_route = "telegram_ws_direct"
 
-        # WS failed -> fallback
+        if ws is None and _upstream_mode in ('auto', 'relay_ws') and _relay_url:
+            try:
+                ws = await _try_relay_ws(
+                    dc, is_media, target, domains, label, media_tag,
+                    _relay_url, _relay_token)
+                transport_route = "relay_ws"
+            except Exception as exc:
+                _stats.ws_errors += 1
+                log.warning("[%s] DC%d%s relay connect failed: %s",
+                            label, dc, media_tag, exc)
+
         if ws is None:
-            if ws_failed_redirect and all_redirects:
-                ws_blacklist.add(dc_key)
-                log.warning("[%s] DC%d%s blacklisted for WS (all 302)",
-                            label, dc, media_tag)
-            elif ws_failed_redirect:
-                dc_fail_until[dc_key] = now + DC_FAIL_COOLDOWN
-            else:
-                dc_fail_until[dc_key] = now + DC_FAIL_COOLDOWN
-                log.info("[%s] DC%d%s WS cooldown for %ds",
-                         label, dc, media_tag, int(DC_FAIL_COOLDOWN))
+            if _upstream_mode != 'relay_ws':
+                if ws_failed_redirect and all_redirects:
+                    ws_blacklist.add(dc_key)
+                    log.warning("[%s] DC%d%s blacklisted for WS (all 302)",
+                                label, dc, media_tag)
+                elif ws_failed_redirect:
+                    dc_fail_until[dc_key] = now + DC_FAIL_COOLDOWN
+                else:
+                    dc_fail_until[dc_key] = now + DC_FAIL_COOLDOWN
+                    log.info("[%s] DC%d%s WS cooldown for %ds",
+                             label, dc, media_tag, int(DC_FAIL_COOLDOWN))
 
             fallback_dst = _fallback_ip(dc) or target
             log.info("[%s] DC%d%s -> TCP fallback to %s:443",
@@ -1026,9 +1138,10 @@ async def _handle_client(reader, writer, secret: bytes):
                          label, dc, media_tag)
             return
 
-        dc_fail_until.pop(dc_key, None)
+        if transport_route == "telegram_ws_direct":
+            dc_fail_until.pop(dc_key, None)
         _stats.connections_ws += 1
-        _stats.last_transport_route = "telegram_ws_direct"
+        _stats.last_transport_route = transport_route or "telegram_ws_direct"
 
         splitter = None
         try:
@@ -1075,9 +1188,16 @@ _server_instance = None
 _server_stop_event = None
 
 
-async def _run(stop_event: Optional[asyncio.Event] = None):
+async def _run(stop_event: Optional[asyncio.Event] = None,
+               upstream_mode: str = DEFAULT_UPSTREAM_MODE,
+               relay_url: Optional[str] = None,
+               relay_token: str = ''):
     global _server_instance, _server_stop_event
+    global _upstream_mode, _relay_url, _relay_token
     _server_stop_event = stop_event
+    _upstream_mode = upstream_mode
+    _relay_url = relay_url
+    _relay_token = relay_token
 
     secret_bytes = bytes.fromhex(proxy_config.secret)
 
@@ -1100,6 +1220,9 @@ async def _run(stop_event: Optional[asyncio.Event] = None):
     log.info("  Telegram MTProto WS Bridge Proxy")
     log.info("  Listening on   %s:%d", proxy_config.host, proxy_config.port)
     log.info("  Secret:        %s", proxy_config.secret)
+    log.info("  Upstream mode: %s", upstream_mode)
+    if relay_url:
+        log.info("  Relay URL:     %s", relay_url)
     log.info("  Target DC IPs:")
     for dc in sorted(proxy_config.dc_redirects.keys()):
         ip = proxy_config.dc_redirects.get(dc)
@@ -1176,8 +1299,11 @@ def parse_dc_ip_list(dc_ip_list: List[str]) -> Dict[int, str]:
     return dc_redirects
 
 
-def run_proxy(stop_event: Optional[asyncio.Event] = None):
-    asyncio.run(_run(stop_event,))
+def run_proxy(stop_event: Optional[asyncio.Event] = None,
+              upstream_mode: str = DEFAULT_UPSTREAM_MODE,
+              relay_url: Optional[str] = None,
+              relay_token: str = ''):
+    asyncio.run(_run(stop_event, upstream_mode, relay_url, relay_token))
 
 
 def main():
@@ -1192,6 +1318,13 @@ def main():
                          'Auto-generated if not provided.')
     ap.add_argument('--dc-ip', metavar='DC:IP', action='append',
                     help='Target IP for a DC, e.g. --dc-ip 2:149.154.167.220')
+    ap.add_argument('--upstream-mode', type=str, default=DEFAULT_UPSTREAM_MODE,
+                    choices=['telegram_ws_direct', 'relay_ws', 'auto'],
+                    help='Select upstream transport mode')
+    ap.add_argument('--relay-url', type=str, default=None,
+                    help='Relay WebSocket URL, e.g. wss://relay.example.com/connect')
+    ap.add_argument('--relay-token', type=str, default='',
+                    help='Shared auth token for relay mode')
     ap.add_argument('-v', '--verbose', action='store_true',
                     help='Debug logging')
     ap.add_argument('--log-file', type=str, default=None, metavar='PATH',
@@ -1260,7 +1393,11 @@ def main():
         root.addHandler(fh)
 
     try:
-        asyncio.run(_run())
+        asyncio.run(_run(
+            upstream_mode=args.upstream_mode,
+            relay_url=args.relay_url,
+            relay_token=args.relay_token,
+        ))
     except KeyboardInterrupt:
         log.info("Shutting down. Final stats: %s", _stats.summary())
 

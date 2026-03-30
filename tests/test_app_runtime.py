@@ -92,7 +92,10 @@ class ProxyAppRuntimeTests(unittest.TestCase):
             self.assertEqual(
                 thread_holder["thread"].args,
                 (DEFAULT_CONFIG["port"], {2: "149.154.167.220"},
-                 DEFAULT_CONFIG["host"]))
+                 DEFAULT_CONFIG["host"],
+                 DEFAULT_CONFIG["upstream_mode"],
+                 DEFAULT_CONFIG["relay_url"],
+                 DEFAULT_CONFIG["relay_token"]))
 
     def test_start_proxy_reports_bad_config(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -120,7 +123,7 @@ class ProxyAppRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             errors = []
 
-            async def fake_run_proxy(stop_event=None):
+            async def fake_run_proxy(stop_event=None, **kwargs):
                 raise RuntimeError("proxy boom")
 
             runtime = ProxyAppRuntime(
@@ -137,7 +140,7 @@ class ProxyAppRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             errors = []
 
-            async def fake_run_proxy(stop_event=None):
+            async def fake_run_proxy(stop_event=None, **kwargs):
                 raise RuntimeError(
                     "[Errno 98] error while attempting to bind on address "
                     "('127.0.0.1', 1443): address already in use"
