@@ -115,6 +115,10 @@ class AndroidProxyBridgeTests(unittest.TestCase):
                 512,
                 6,
                 True,
+                "auto",
+                "wss://relay.example.com/connect",
+                "relay-token",
+                3.5,
             )
         finally:
             android_proxy_bridge.ProxyAppRuntime = original_runtime
@@ -124,6 +128,13 @@ class AndroidProxyBridgeTests(unittest.TestCase):
         self.assertEqual(captured["config"]["log_max_mb"], 7.0)
         self.assertEqual(captured["config"]["buf_kb"], 512)
         self.assertEqual(captured["config"]["pool_size"], 6)
+        self.assertEqual(captured["config"]["upstream_mode"], "auto")
+        self.assertEqual(
+            captured["config"]["relay_url"],
+            "wss://relay.example.com/connect",
+        )
+        self.assertEqual(captured["config"]["relay_token"], "relay-token")
+        self.assertEqual(captured["config"]["direct_ws_timeout_seconds"], 3.5)
         self.assertEqual(captured["log_max_mb"], 7.0)
         self.assertTrue(captured["verbose"])
 

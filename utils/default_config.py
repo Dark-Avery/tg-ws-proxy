@@ -15,6 +15,7 @@ _TRAY_DEFAULTS_COMMON: Dict[str, Any] = {
     "upstream_mode": "telegram_ws_direct",
     "relay_url": "",
     "relay_token": "",
+    "direct_ws_timeout_seconds": 10.0,
     "verbose": False,
     "check_updates": True,
     "log_max_mb": 5,

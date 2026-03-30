@@ -52,6 +52,10 @@ class ProxyAppRuntimeTests(unittest.TestCase):
             self.assertEqual(cfg["port"], 9050)
             self.assertEqual(cfg["host"], "127.0.0.2")
             self.assertEqual(cfg["dc_ip"], DEFAULT_CONFIG["dc_ip"])
+            self.assertEqual(
+                cfg["direct_ws_timeout_seconds"],
+                DEFAULT_CONFIG["direct_ws_timeout_seconds"],
+            )
             self.assertEqual(cfg["verbose"], DEFAULT_CONFIG["verbose"])
 
     def test_invalid_config_file_falls_back_to_defaults(self):
@@ -95,7 +99,8 @@ class ProxyAppRuntimeTests(unittest.TestCase):
                  DEFAULT_CONFIG["host"],
                  DEFAULT_CONFIG["upstream_mode"],
                  DEFAULT_CONFIG["relay_url"],
-                 DEFAULT_CONFIG["relay_token"]))
+                 DEFAULT_CONFIG["relay_token"],
+                 DEFAULT_CONFIG["direct_ws_timeout_seconds"]))
 
     def test_start_proxy_reports_bad_config(self):
         with tempfile.TemporaryDirectory() as tmpdir:

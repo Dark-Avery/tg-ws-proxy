@@ -49,7 +49,8 @@ def start_proxy(app_dir: str, host: str, port: int, secret: str,
                 buf_kb: int = 256, pool_size: int = 4,
                 verbose: bool = False,
                 upstream_mode: str = "telegram_ws_direct",
-                relay_url: str = "", relay_token: str = "") -> str:
+                relay_url: str = "", relay_token: str = "",
+                direct_ws_timeout_seconds: float = 10.0) -> str:
     global _RUNTIME, _LAST_ERROR
 
     with _RUNTIME_LOCK:
@@ -77,6 +78,7 @@ def start_proxy(app_dir: str, host: str, port: int, secret: str,
             "upstream_mode": str(upstream_mode or "telegram_ws_direct"),
             "relay_url": str(relay_url or ""),
             "relay_token": str(relay_token or ""),
+            "direct_ws_timeout_seconds": float(direct_ws_timeout_seconds),
             "log_max_mb": float(log_max_mb),
             "buf_kb": int(buf_kb),
             "pool_size": int(pool_size),

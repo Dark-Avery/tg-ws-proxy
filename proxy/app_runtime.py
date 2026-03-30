@@ -22,6 +22,7 @@ DEFAULT_CONFIG = {
     "upstream_mode": "telegram_ws_direct",
     "relay_url": "",
     "relay_token": "",
+    "direct_ws_timeout_seconds": 10.0,
     "log_max_mb": 5,
     "buf_kb": 256,
     "pool_size": 4,
@@ -154,7 +155,8 @@ class ProxyAppRuntime:
                           host: str = "127.0.0.1",
                           upstream_mode: str = "telegram_ws_direct",
                           relay_url: str = "",
-                          relay_token: str = ""):
+                          relay_token: str = "",
+                          direct_ws_timeout_seconds: float = 10.0):
         loop = _asyncio.new_event_loop()
         _asyncio.set_event_loop(loop)
         stop_ev = _asyncio.Event()
@@ -167,6 +169,7 @@ class ProxyAppRuntime:
                     upstream_mode=upstream_mode,
                     relay_url=relay_url or None,
                     relay_token=relay_token,
+                    direct_ws_timeout_seconds=direct_ws_timeout_seconds,
                 )
             )
         except Exception as exc:
@@ -201,6 +204,9 @@ class ProxyAppRuntime:
             "relay_url", self.default_config["relay_url"])
         relay_token = active_cfg.get(
             "relay_token", self.default_config["relay_token"])
+        direct_ws_timeout_seconds = float(active_cfg.get(
+            "direct_ws_timeout_seconds",
+            self.default_config["direct_ws_timeout_seconds"]))
         buf_kb = active_cfg.get("buf_kb", self.default_config["buf_kb"])
         pool_size = active_cfg.get(
             "pool_size", self.default_config["pool_size"])
@@ -228,6 +234,7 @@ class ProxyAppRuntime:
                 upstream_mode,
                 relay_url,
                 relay_token,
+                direct_ws_timeout_seconds,
             ),
             daemon=True,
             name="proxy")

@@ -37,9 +37,11 @@ proxy_config = ProxyConfig()
 log = logging.getLogger('tg-mtproto-proxy')
 
 DEFAULT_UPSTREAM_MODE = 'telegram_ws_direct'
+DEFAULT_DIRECT_WS_TIMEOUT = 10.0
 _upstream_mode = DEFAULT_UPSTREAM_MODE
 _relay_url: Optional[str] = None
 _relay_token = ''
+_direct_ws_timeout_seconds = DEFAULT_DIRECT_WS_TIMEOUT
 
 DC_DEFAULT_IPS: Dict[int, str] = {
     1: '149.154.175.50',
@@ -1093,7 +1095,9 @@ async def _handle_client(reader, writer, secret: bytes):
 
         now = time.monotonic()
         fail_until = dc_fail_until.get(dc_key, 0)
-        ws_timeout = WS_FAIL_TIMEOUT if now < fail_until else 10.0
+        ws_timeout = WS_FAIL_TIMEOUT if now < fail_until else (
+            _direct_ws_timeout_seconds if _upstream_mode == 'auto' else 10.0
+        )
 
         domains = _ws_domains(dc, is_media)
         target = proxy_config.dc_redirects[dc]
@@ -1200,13 +1204,15 @@ _server_stop_event = None
 async def _run(stop_event: Optional[asyncio.Event] = None,
                upstream_mode: str = DEFAULT_UPSTREAM_MODE,
                relay_url: Optional[str] = None,
-               relay_token: str = ''):
+               relay_token: str = '',
+               direct_ws_timeout_seconds: float = DEFAULT_DIRECT_WS_TIMEOUT):
     global _server_instance, _server_stop_event
-    global _upstream_mode, _relay_url, _relay_token
+    global _upstream_mode, _relay_url, _relay_token, _direct_ws_timeout_seconds
     _server_stop_event = stop_event
     _upstream_mode = upstream_mode
     _relay_url = relay_url
     _relay_token = relay_token
+    _direct_ws_timeout_seconds = max(0.5, float(direct_ws_timeout_seconds))
 
     secret_bytes = bytes.fromhex(proxy_config.secret)
 
@@ -1232,6 +1238,8 @@ async def _run(stop_event: Optional[asyncio.Event] = None,
     log.info("  Upstream mode: %s", upstream_mode)
     if relay_url:
         log.info("  Relay URL:     %s", relay_url)
+    if upstream_mode == 'auto':
+        log.info("  Direct WS timeout: %.1fs", _direct_ws_timeout_seconds)
     log.info("  Target DC IPs:")
     for dc in sorted(proxy_config.dc_redirects.keys()):
         ip = proxy_config.dc_redirects.get(dc)
@@ -1311,8 +1319,10 @@ def parse_dc_ip_list(dc_ip_list: List[str]) -> Dict[int, str]:
 def run_proxy(stop_event: Optional[asyncio.Event] = None,
               upstream_mode: str = DEFAULT_UPSTREAM_MODE,
               relay_url: Optional[str] = None,
-              relay_token: str = ''):
-    asyncio.run(_run(stop_event, upstream_mode, relay_url, relay_token))
+              relay_token: str = '',
+              direct_ws_timeout_seconds: float = DEFAULT_DIRECT_WS_TIMEOUT):
+    asyncio.run(_run(stop_event, upstream_mode, relay_url, relay_token,
+                     direct_ws_timeout_seconds))
 
 
 def main():
@@ -1334,6 +1344,9 @@ def main():
                     help='Relay WebSocket URL, e.g. wss://relay.example.com/connect')
     ap.add_argument('--relay-token', type=str, default='',
                     help='Shared auth token for relay mode')
+    ap.add_argument('--direct-ws-timeout-seconds', type=float,
+                    default=DEFAULT_DIRECT_WS_TIMEOUT,
+                    help='How long auto mode waits on direct WS before trying relay')
     ap.add_argument('-v', '--verbose', action='store_true',
                     help='Debug logging')
     ap.add_argument('--log-file', type=str, default=None, metavar='PATH',
@@ -1406,6 +1419,7 @@ def main():
             upstream_mode=args.upstream_mode,
             relay_url=args.relay_url,
             relay_token=args.relay_token,
+            direct_ws_timeout_seconds=args.direct_ws_timeout_seconds,
         ))
     except KeyboardInterrupt:
         log.info("Shutting down. Final stats: %s", _stats.summary())
