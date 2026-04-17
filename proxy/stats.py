@@ -14,6 +14,24 @@ class _Stats:
         self.bytes_down = 0
         self.pool_hits = 0
         self.pool_misses = 0
+        self.last_transport_route = None
+
+    def snapshot(self) -> dict:
+        return {
+            "connections_total": self.connections_total,
+            "connections_active": self.connections_active,
+            "connections_ws": self.connections_ws,
+            "connections_tcp_fallback": self.connections_tcp_fallback,
+            "connections_cfproxy": self.connections_cfproxy,
+            "connections_bad": self.connections_bad,
+            "connections_masked": self.connections_masked,
+            "ws_errors": self.ws_errors,
+            "bytes_up": self.bytes_up,
+            "bytes_down": self.bytes_down,
+            "pool_hits": self.pool_hits,
+            "pool_misses": self.pool_misses,
+            "last_transport_route": self.last_transport_route,
+        }
 
     def summary(self) -> str:
         pool_total = self.pool_hits + self.pool_misses
