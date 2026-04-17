@@ -27,6 +27,9 @@ DEFAULT_CONFIG = {
     "log_max_mb": 5,
     "buf_kb": 256,
     "pool_size": 4,
+    "cfproxy": True,
+    "cfproxy_priority": True,
+    "cfproxy_user_domain": "",
     "verbose": False,
 }
 
@@ -66,6 +69,14 @@ class ProxyAppRuntime:
         buf_kb = int(active_cfg.get("buf_kb", self.default_config["buf_kb"]))
         pool_size = int(active_cfg.get(
             "pool_size", self.default_config["pool_size"]))
+        cfproxy = bool(active_cfg.get(
+            "cfproxy", self.default_config["cfproxy"]))
+        cfproxy_priority = bool(active_cfg.get(
+            "cfproxy_priority", self.default_config["cfproxy_priority"]))
+        cfproxy_user_domain = str(active_cfg.get(
+            "cfproxy_user_domain",
+            self.default_config["cfproxy_user_domain"],
+        ) or "").strip()
 
         return tg_ws_proxy.ProxyConfig(
             port=port,
@@ -74,6 +85,9 @@ class ProxyAppRuntime:
             dc_redirects=dc_opt,
             buffer_size=max(4, buf_kb) * 1024,
             pool_size=max(0, pool_size),
+            fallback_cfproxy=cfproxy,
+            fallback_cfproxy_priority=cfproxy_priority,
+            cfproxy_user_domain=cfproxy_user_domain,
         )
 
     def ensure_dirs(self):

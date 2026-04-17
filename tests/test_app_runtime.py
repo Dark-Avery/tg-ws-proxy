@@ -102,6 +102,52 @@ class ProxyAppRuntimeTests(unittest.TestCase):
                  DEFAULT_CONFIG["relay_token"],
                  DEFAULT_CONFIG["direct_ws_timeout_seconds"]))
 
+    def test_start_proxy_applies_cfproxy_settings_to_core_proxy_config(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            thread_holder = {}
+            import proxy.tg_ws_proxy as tg_ws_proxy
+
+            def fake_thread_factory(**kwargs):
+                thread = _FakeThread(**kwargs)
+                thread_holder["thread"] = thread
+                return thread
+
+            runtime = ProxyAppRuntime(
+                Path(tmpdir),
+                thread_factory=fake_thread_factory,
+            )
+
+            original_core_proxy_config = tg_ws_proxy.proxy_config
+            try:
+                started = runtime.start_proxy({
+                    "port": 1443,
+                    "host": "127.0.0.1",
+                    "secret": "0123456789abcdef0123456789abcdef",
+                    "dc_ip": list(DEFAULT_CONFIG["dc_ip"]),
+                    "upstream_mode": "telegram_ws_direct",
+                    "relay_url": "",
+                    "relay_token": "",
+                    "direct_ws_timeout_seconds": 10.0,
+                    "buf_kb": 256,
+                    "pool_size": 4,
+                    "verbose": False,
+                    "cfproxy": False,
+                    "cfproxy_priority": False,
+                    "cfproxy_user_domain": "cdn.example.com",
+                })
+                applied_proxy_config = tg_ws_proxy.proxy_config
+            finally:
+                tg_ws_proxy.proxy_config = original_core_proxy_config
+
+            self.assertTrue(started)
+            self.assertTrue(thread_holder["thread"].started)
+            self.assertFalse(applied_proxy_config.fallback_cfproxy)
+            self.assertFalse(applied_proxy_config.fallback_cfproxy_priority)
+            self.assertEqual(
+                applied_proxy_config.cfproxy_user_domain,
+                "cdn.example.com",
+            )
+
     def test_run_proxy_thread_passes_only_stop_event_to_legacy_callable(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             captured = {}
