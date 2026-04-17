@@ -56,6 +56,7 @@ DEGRADED_DIRECT_WS_MEDIA_MIN_ELAPSED = 8.0
 DEGRADED_DIRECT_WS_MEDIA_MAX_DOWN = 64 * 1024
 DEGRADED_DIRECT_WS_MEDIA_STREAK = 2
 LAST_GOOD_ROUTE_TTL = 30.0
+_RUN_CONFIG_UNSET = object()
 
 DC_FAIL_COOLDOWN = 30.0
 WS_FAIL_TIMEOUT = 2.0
@@ -887,18 +888,17 @@ async def _handle_client(reader, writer, secret: bytes):
 
         await ws.send(relay_init)
 
-        before_down = stats.bytes_down
-        started_at = asyncio.get_running_loop().time()
-        await bridge_ws_reencrypt(clt_reader, clt_writer, ws, label,
-                                  dc=dc, is_media=is_media,
-                                  ctx=ctx, splitter=splitter)
+        elapsed, down_bytes = await bridge_ws_reencrypt(
+            clt_reader, clt_writer, ws, label,
+            dc=dc, is_media=is_media,
+            ctx=ctx, splitter=splitter)
         _record_route_session_result(
             label,
             transport_route,
             dc,
             is_media,
-            asyncio.get_running_loop().time() - started_at,
-            stats.bytes_down - before_down,
+            elapsed,
+            down_bytes,
         )
 
     except asyncio.TimeoutError:
@@ -931,17 +931,24 @@ _client_tasks: Set[asyncio.Task] = set()
 
 
 async def _run(stop_event: Optional[asyncio.Event] = None,
-               upstream_mode: str = DEFAULT_UPSTREAM_MODE,
-               relay_url: Optional[str] = None,
-               relay_token: str = "",
-               direct_ws_timeout_seconds: float = DEFAULT_DIRECT_WS_TIMEOUT):
+               upstream_mode: object = _RUN_CONFIG_UNSET,
+               relay_url: object = _RUN_CONFIG_UNSET,
+               relay_token: object = _RUN_CONFIG_UNSET,
+               direct_ws_timeout_seconds: object = _RUN_CONFIG_UNSET):
     global _server_instance, _server_stop_event
     global _upstream_mode, _relay_url, _relay_token
     _server_stop_event = stop_event
-    proxy_config.upstream_mode = upstream_mode
-    proxy_config.relay_url = relay_url or ""
-    proxy_config.relay_token = relay_token
-    proxy_config.direct_ws_timeout_seconds = direct_ws_timeout_seconds
+
+    if upstream_mode is not _RUN_CONFIG_UNSET:
+        proxy_config.upstream_mode = str(upstream_mode)
+    if relay_url is not _RUN_CONFIG_UNSET:
+        proxy_config.relay_url = relay_url or ""
+    if relay_token is not _RUN_CONFIG_UNSET:
+        proxy_config.relay_token = str(relay_token)
+    if direct_ws_timeout_seconds is not _RUN_CONFIG_UNSET:
+        proxy_config.direct_ws_timeout_seconds = float(
+            direct_ws_timeout_seconds)
+
     _upstream_mode = proxy_config.upstream_mode
     _relay_url = proxy_config.relay_url or None
     _relay_token = proxy_config.relay_token
@@ -1064,10 +1071,10 @@ async def _run(stop_event: Optional[asyncio.Event] = None,
 
 
 def run_proxy(stop_event: Optional[asyncio.Event] = None,
-              upstream_mode: str = DEFAULT_UPSTREAM_MODE,
-              relay_url: Optional[str] = None,
-              relay_token: str = "",
-              direct_ws_timeout_seconds: float = DEFAULT_DIRECT_WS_TIMEOUT):
+              upstream_mode: object = _RUN_CONFIG_UNSET,
+              relay_url: object = _RUN_CONFIG_UNSET,
+              relay_token: object = _RUN_CONFIG_UNSET,
+              direct_ws_timeout_seconds: object = _RUN_CONFIG_UNSET):
     asyncio.run(_run(
         stop_event,
         upstream_mode,

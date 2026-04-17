@@ -306,6 +306,7 @@ async def bridge_ws_reencrypt(reader, writer, ws: RawWebSocket, label,
             await writer.wait_closed()
         except BaseException:
             pass
+    return elapsed, down_bytes
 
 
 async def _bridge_tcp_reencrypt(reader, writer, remote_reader, remote_writer,
