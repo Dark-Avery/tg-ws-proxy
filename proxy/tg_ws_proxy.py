@@ -24,14 +24,27 @@ if __name__ == '__main__' and (__package__ is None or __package__ == ''):
 
 from .utils import *
 from .stats import stats
-from .config import proxy_config, parse_dc_ip_list, start_cfproxy_domain_refresh
-from .bridge import MsgSplitter, CryptoCtx, do_fallback, bridge_ws_reencrypt
+from .config import (
+    ProxyConfig as _ProxyConfig,
+    proxy_config,
+    parse_dc_ip_list,
+    start_cfproxy_domain_refresh,
+)
+from .bridge import (
+    MsgSplitter as _MsgSplitter,
+    CryptoCtx,
+    do_fallback,
+    bridge_ws_reencrypt,
+)
 from .raw_websocket import RawWebSocket, WsHandshakeError, set_sock_opts
 from .fake_tls import proxy_to_masking_domain, verify_client_hello, build_server_hello, FakeTlsStream, TLS_RECORD_HANDSHAKE
 from .balancer import balancer
 
 
 log = logging.getLogger('tg-mtproto-proxy')
+
+ProxyConfig = _ProxyConfig
+MsgSplitter = _MsgSplitter
 
 DC_FAIL_COOLDOWN = 30.0
 WS_FAIL_TIMEOUT = 2.0
