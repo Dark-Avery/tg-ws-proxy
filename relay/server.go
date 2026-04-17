@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,6 +19,10 @@ import (
 
 const (
 	modeTelegramWS = "telegram_ws"
+)
+
+var telegramUpstreamDomainRe = regexp.MustCompile(
+	`^kws[0-9]+(?:-[0-9]+)?\.web\.telegram\.org$`,
 )
 
 type Config struct {
@@ -190,13 +195,22 @@ func validateHandshake(req HandshakeRequest, cfg Config) *RelayError {
 			Message: "only protocol version 1 is supported",
 		}
 	}
-	if !cfg.AllowEmptyToken && cfg.AuthToken == "" {
-		return &RelayError{
-			Code:    "internal_error",
-			Message: "relay auth token is not configured",
+
+	switch {
+	case cfg.AuthToken == "":
+		if !cfg.AllowEmptyToken {
+			return &RelayError{
+				Code:    "internal_error",
+				Message: "relay auth token is not configured",
+			}
 		}
-	}
-	if !cfg.AllowEmptyToken && req.AuthToken != cfg.AuthToken {
+		if req.AuthToken != "" {
+			return &RelayError{
+				Code:    "auth_failed",
+				Message: "auth token is invalid",
+			}
+		}
+	case req.AuthToken != cfg.AuthToken:
 		return &RelayError{
 			Code:    "auth_failed",
 			Message: "auth token is invalid",
@@ -241,10 +255,7 @@ func isValidUpstreamDomain(domain string) bool {
 	if strings.TrimSpace(domain) == "" {
 		return false
 	}
-	if strings.ContainsAny(domain, "/:") {
-		return false
-	}
-	return strings.Contains(domain, ".")
+	return telegramUpstreamDomainRe.MatchString(domain)
 }
 
 func dialTelegramUpstream(ctx context.Context, req HandshakeRequest,
@@ -271,20 +282,7 @@ func dialTelegramUpstream(ctx context.Context, req HandshakeRequest,
 }
 
 func dialSingleTelegramUpstream(ctx context.Context, targetIP, domain string) (*websocket.Conn, *RelayError) {
-	dialer := websocket.Dialer{
-		NetDialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
-			var d net.Dialer
-			return d.DialContext(ctx, network, net.JoinHostPort(targetIP, "443"))
-		},
-		Proxy:             http.ProxyFromEnvironment,
-		HandshakeTimeout:  10 * time.Second,
-		EnableCompression: false,
-		Subprotocols:      []string{"binary"},
-		TLSClientConfig: &tls.Config{
-			ServerName:         domain,
-			InsecureSkipVerify: true,
-		},
-	}
+	dialer := newTelegramUpstreamDialer(targetIP, domain)
 
 	headers := http.Header{}
 	headers.Set("Origin", "https://web.telegram.org")
@@ -311,15 +309,35 @@ func dialSingleTelegramUpstream(ctx context.Context, targetIP, domain string) (*
 		}
 	}
 
+	return nil, classifyTelegramUpstreamDialError(err)
+}
+
+func newTelegramUpstreamDialer(targetIP, domain string) websocket.Dialer {
+	return websocket.Dialer{
+		NetDialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, network, net.JoinHostPort(targetIP, "443"))
+		},
+		Proxy:             http.ProxyFromEnvironment,
+		HandshakeTimeout:  10 * time.Second,
+		EnableCompression: false,
+		Subprotocols:      []string{"binary"},
+		TLSClientConfig: &tls.Config{
+			ServerName: domain,
+		},
+	}
+}
+
+func classifyTelegramUpstreamDialError(err error) *RelayError {
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
-		return nil, &RelayError{
+		return &RelayError{
 			Code:    "upstream_timeout",
 			Message: "timed out while connecting to Telegram WS",
 			Err:     err,
 		}
 	case isTimeoutError(err):
-		return nil, &RelayError{
+		return &RelayError{
 			Code:    "upstream_timeout",
 			Message: "timed out while connecting to Telegram WS",
 			Err:     err,
@@ -327,13 +345,13 @@ func dialSingleTelegramUpstream(ctx context.Context, targetIP, domain string) (*
 	case strings.Contains(strings.ToLower(err.Error()), "tls"),
 		strings.Contains(strings.ToLower(err.Error()), "ssl"),
 		strings.Contains(strings.ToLower(err.Error()), "x509"):
-		return nil, &RelayError{
+		return &RelayError{
 			Code:    "upstream_ssl_error",
 			Message: "TLS handshake with Telegram WS failed",
 			Err:     err,
 		}
 	default:
-		return nil, &RelayError{
+		return &RelayError{
 			Code:    "upstream_unreachable",
 			Message: "failed to connect to Telegram WS",
 			Err:     err,

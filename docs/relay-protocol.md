@@ -133,6 +133,8 @@ Relay ОБЯЗАН ответить ровно одним UTF-8 JSON text frame.
 - В первой версии используется один общий bearer token в поле
   `auth_token`.
 - В non-development режиме relay НЕ ДОЛЖЕН принимать пустой токен.
+- Если relay запущен с пустым `-auth-token` и `-allow-empty-token`,
+  он принимает только пустой `auth_token` от клиента.
 - В будущих версиях это можно расширить до HMAC, короткоживущих токенов
   или per-user credentials без изменения binary framing.
 

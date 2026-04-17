@@ -67,7 +67,8 @@ direct Telegram WS -> relay WS -> direct TCP
 - `-listen` — адрес и порт, по умолчанию `:8080`
 - `-path` — WebSocket endpoint, по умолчанию `/connect`
 - `-auth-token` — общий токен для клиентов
-- `-allow-empty-token` — только для локальной разработки
+- `-allow-empty-token` — только для локальной разработки; если
+  `-auth-token` пустой, relay принимает только пустой client token
 - `-upstream-timeout` — timeout dial до Telegram WS
 - `-tls-cert`, `-tls-key` — сертификат и ключ для публичного relay
 
