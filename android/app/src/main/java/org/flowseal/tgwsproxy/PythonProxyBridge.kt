@@ -27,6 +27,9 @@ object PythonProxyBridge {
             config.relayUrl,
             config.relayToken,
             config.directWsTimeoutSeconds,
+            config.cfproxy,
+            config.cfproxyPriority,
+            config.cfproxyUserDomain,
         ).toString()
     }
 

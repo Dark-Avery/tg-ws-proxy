@@ -138,6 +138,61 @@ class AndroidProxyBridgeTests(unittest.TestCase):
         self.assertEqual(captured["log_max_mb"], 7.0)
         self.assertTrue(captured["verbose"])
 
+    def test_start_proxy_propagates_cfproxy_runtime_config(self):
+        captured = {}
+
+        class FakeRuntime:
+            def __init__(self, *args, **kwargs):
+                captured["runtime_init"] = kwargs
+                self.log_file = Path("/tmp/proxy.log")
+
+            def reset_log_file(self):
+                pass
+
+            def setup_logging(self, verbose=False, log_max_mb=5):
+                pass
+
+            def save_config(self, config):
+                captured["config"] = dict(config)
+
+            def start_proxy(self, config):
+                captured["start_proxy"] = dict(config)
+                return True
+
+            def is_proxy_running(self):
+                return True
+
+            def stop_proxy(self):
+                pass
+
+        original_runtime = android_proxy_bridge.ProxyAppRuntime
+        try:
+            android_proxy_bridge.ProxyAppRuntime = FakeRuntime
+            android_proxy_bridge.start_proxy(
+                "/tmp/app",
+                "127.0.0.1",
+                1443,
+                "0123456789abcdef0123456789abcdef",
+                ["2:149.154.167.220"],
+                5.0,
+                256,
+                4,
+                False,
+                "telegram_ws_direct",
+                "",
+                "",
+                10.0,
+            )
+        finally:
+            android_proxy_bridge.ProxyAppRuntime = original_runtime
+
+        self.assertEqual(captured["config"]["cfproxy"], True)
+        self.assertEqual(captured["config"]["cfproxy_priority"], True)
+        self.assertEqual(captured["config"]["cfproxy_user_domain"], "")
+        self.assertEqual(captured["start_proxy"]["cfproxy"], True)
+        self.assertEqual(captured["start_proxy"]["cfproxy_priority"], True)
+        self.assertEqual(captured["start_proxy"]["cfproxy_user_domain"], "")
+
     def test_get_update_status_json_merges_python_update_state(self):
         original_load_update_check = android_proxy_bridge._load_update_check
         try:

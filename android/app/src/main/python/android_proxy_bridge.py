@@ -50,7 +50,10 @@ def start_proxy(app_dir: str, host: str, port: int, secret: str,
                 verbose: bool = False,
                 upstream_mode: str = "telegram_ws_direct",
                 relay_url: str = "", relay_token: str = "",
-                direct_ws_timeout_seconds: float = 10.0) -> str:
+                direct_ws_timeout_seconds: float = 10.0,
+                cfproxy: bool = True,
+                cfproxy_priority: bool = True,
+                cfproxy_user_domain: str = "") -> str:
     global _RUNTIME, _LAST_ERROR
 
     with _RUNTIME_LOCK:
@@ -83,6 +86,9 @@ def start_proxy(app_dir: str, host: str, port: int, secret: str,
             "buf_kb": int(buf_kb),
             "pool_size": int(pool_size),
             "verbose": bool(verbose),
+            "cfproxy": bool(cfproxy),
+            "cfproxy_priority": bool(cfproxy_priority),
+            "cfproxy_user_domain": str(cfproxy_user_domain or "").strip(),
         }
         runtime.save_config(config)
 
