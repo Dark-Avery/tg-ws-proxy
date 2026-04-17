@@ -14,8 +14,8 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 import psutil
 
-from proxy import __version__, get_link_host, parse_dc_ip_list, proxy_config
-from proxy.tg_ws_proxy import _run
+import proxy.tg_ws_proxy as tg_ws_proxy
+from proxy import __version__
 from utils.default_config import default_tray_config
 
 log = logging.getLogger("tg-ws-tray")
@@ -51,7 +51,7 @@ def ensure_dirs() -> None:
 _lock_file_path: Optional[Path] = None
 
 
-def _same_process(meta: dict, proc: psutil.Process) -> bool:
+def _same_process(meta: dict, proc: psutil.Process, script_hint: str) -> bool:
     try:
         lock_ct = float(meta.get("create_time", 0.0))
         if lock_ct > 0 and abs(lock_ct - proc.create_time()) > 1.0:
@@ -60,20 +60,23 @@ def _same_process(meta: dict, proc: psutil.Process) -> bool:
         return False
     if IS_FROZEN:
         return APP_NAME.lower() in proc.name().lower()
+    try:
+        for arg in proc.cmdline():
+            if script_hint in arg:
+                return True
+    except Exception:
+        pass
     return False
 
 
-def acquire_lock() -> bool:
+def acquire_lock(script_hint: str = "") -> bool:
     global _lock_file_path
     ensure_dirs()
     for f in list(APP_DIR.glob("*.lock")):
         try:
             pid = int(f.stem)
         except Exception:
-            try:
-                f.unlink(missing_ok=True)
-            except OSError:
-                pass
+            f.unlink(missing_ok=True)
             continue
         meta: dict = {}
         try:
@@ -82,17 +85,12 @@ def acquire_lock() -> bool:
                 meta = json.loads(raw)
         except Exception:
             pass
-        is_running = False
         try:
-            is_running = _same_process(meta, psutil.Process(pid))
+            if _same_process(meta, psutil.Process(pid), script_hint):
+                return False
         except Exception:
             pass
-        if is_running:
-            return False
-        try:
-            f.unlink(missing_ok=True)
-        except OSError:
-            pass
+        f.unlink(missing_ok=True)
 
     lock_file = APP_DIR / f"{os.getpid()}.lock"
     try:
@@ -102,10 +100,7 @@ def acquire_lock() -> bool:
             encoding="utf-8",
         )
     except Exception:
-        try:
-            lock_file.touch()
-        except Exception:
-            pass
+        lock_file.touch()
     _lock_file_path = lock_file
     return True
 
@@ -153,7 +148,6 @@ def setup_logging(verbose: bool = False, log_max_mb: float = 5) -> None:
     level = logging.DEBUG if verbose else logging.INFO
     root = logging.getLogger()
     root.setLevel(level)
-    logging.getLogger('asyncio').setLevel(logging.WARNING)
 
     fh = logging.handlers.RotatingFileHandler(
         str(LOG_FILE),
@@ -240,7 +234,14 @@ def _run_proxy_thread(on_port_busy: Callable[[str], None]) -> None:
     _async_stop = (loop, stop_ev)
 
     try:
-        loop.run_until_complete(_run(stop_event=stop_ev))
+        loop.run_until_complete(
+            tg_ws_proxy._run(
+                stop_event=stop_ev,
+                upstream_mode=tg_ws_proxy._upstream_mode,
+                relay_url=tg_ws_proxy._relay_url,
+                relay_token=tg_ws_proxy._relay_token,
+            )
+        )
     except Exception as exc:
         log.error("Proxy thread crashed: %s", exc)
         if "Address already in use" in str(exc) or "10048" in str(exc):
@@ -258,21 +259,27 @@ def _run_proxy_thread(on_port_busy: Callable[[str], None]) -> None:
 def apply_proxy_config(cfg: dict) -> bool:
     dc_ip_list = cfg.get("dc_ip", DEFAULT_CONFIG["dc_ip"])
     try:
-        dc_redirects = parse_dc_ip_list(dc_ip_list)
+        dc_redirects = tg_ws_proxy.parse_dc_ip_list(dc_ip_list)
     except ValueError as e:
         log.error("Bad config dc_ip: %s", e)
         return False
 
-    pc = proxy_config
+    pc = tg_ws_proxy.proxy_config
     pc.port = cfg.get("port", DEFAULT_CONFIG["port"])
     pc.host = cfg.get("host", DEFAULT_CONFIG["host"])
     pc.secret = cfg.get("secret", DEFAULT_CONFIG["secret"])
     pc.dc_redirects = dc_redirects
     pc.buffer_size = max(4, cfg.get("buf_kb", DEFAULT_CONFIG["buf_kb"])) * 1024
     pc.pool_size = max(0, cfg.get("pool_size", DEFAULT_CONFIG["pool_size"]))
-    pc.fallback_cfproxy = cfg.get("cfproxy", DEFAULT_CONFIG["cfproxy"])
-    pc.fallback_cfproxy_priority = cfg.get("cfproxy_priority", DEFAULT_CONFIG["cfproxy_priority"])
-    pc.cfproxy_user_domain = cfg.get("cfproxy_user_domain", DEFAULT_CONFIG["cfproxy_user_domain"])
+    pc.upstream_mode = cfg.get("upstream_mode", DEFAULT_CONFIG["upstream_mode"])
+    pc.relay_url = cfg.get("relay_url", DEFAULT_CONFIG["relay_url"])
+    pc.relay_token = cfg.get("relay_token", DEFAULT_CONFIG["relay_token"])
+    pc.direct_ws_timeout_seconds = float(
+        cfg.get(
+            "direct_ws_timeout_seconds",
+            DEFAULT_CONFIG["direct_ws_timeout_seconds"],
+        )
+    )
     return True
 
 
@@ -286,7 +293,7 @@ def start_proxy(cfg: dict, on_error: Callable[[str], None]) -> None:
         on_error("Ошибка конфигурации DC → IP.")
         return
 
-    pc = proxy_config
+    pc = tg_ws_proxy.proxy_config
     log.info("Starting proxy on %s:%d ...", pc.host, pc.port)
     _proxy_thread = threading.Thread(
         target=_run_proxy_thread, args=(on_error,), daemon=True, name="proxy"
@@ -316,7 +323,7 @@ def tg_proxy_url(cfg: dict) -> str:
     host = cfg.get("host", DEFAULT_CONFIG["host"])
     port = cfg.get("port", DEFAULT_CONFIG["port"])
     secret = cfg.get("secret", DEFAULT_CONFIG["secret"])
-    link_host = get_link_host(host)
+    link_host = tg_ws_proxy.get_link_host(host)
     return f"tg://proxy?server={link_host}&port={port}&secret=dd{secret}"
 
 
@@ -402,7 +409,7 @@ _ctk_root: Any = None
 _ctk_root_ready = threading.Event()
 
 
-def ensure_ctk_thread(ctk: Any, mode: str = "auto") -> bool:
+def ensure_ctk_thread(ctk: Any) -> bool:
     global _ctk_root
     if ctk is None:
         return False
@@ -414,7 +421,7 @@ def ensure_ctk_thread(ctk: Any, mode: str = "auto") -> bool:
         from ui.ctk_theme import apply_ctk_appearance, install_tkinter_variable_del_guard
 
         install_tkinter_variable_del_guard()
-        apply_ctk_appearance(ctk, mode)
+        apply_ctk_appearance(ctk)
         _ctk_root = ctk.CTk()
         _ctk_root.withdraw()
         _ctk_root_ready.set()
