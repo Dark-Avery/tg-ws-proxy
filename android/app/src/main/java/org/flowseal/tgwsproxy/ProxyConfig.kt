@@ -14,6 +14,9 @@ data class ProxyConfig(
     val logMaxMbText: String = formatDecimal(DEFAULT_LOG_MAX_MB),
     val bufferKbText: String = DEFAULT_BUFFER_KB.toString(),
     val poolSizeText: String = DEFAULT_POOL_SIZE.toString(),
+    val cfproxy: Boolean = DEFAULT_CFPROXY,
+    val cfproxyPriority: Boolean = DEFAULT_CFPROXY_PRIORITY,
+    val cfproxyUserDomainText: String = DEFAULT_CFPROXY_USER_DOMAIN,
     val checkUpdates: Boolean = false,
     val verbose: Boolean = false,
 ) {
@@ -104,6 +107,10 @@ data class ProxyConfig(
             )
         }
 
+        val cfproxyValue = cfproxy
+        val cfproxyPriorityValue = cfproxyPriority
+        val cfproxyUserDomainValue = cfproxyUserDomainText.trim()
+
         return ValidationResult(
             normalized = NormalizedProxyConfig(
                 host = hostValue,
@@ -117,6 +124,9 @@ data class ProxyConfig(
                 logMaxMb = logMaxMbValue,
                 bufferKb = bufferKbValue,
                 poolSize = poolSizeValue,
+                cfproxy = cfproxyValue,
+                cfproxyPriority = cfproxyPriorityValue,
+                cfproxyUserDomain = cfproxyUserDomainValue,
                 checkUpdates = checkUpdates,
                 verbose = verbose,
             )
@@ -130,6 +140,9 @@ data class ProxyConfig(
         const val DEFAULT_LOG_MAX_MB = 5.0
         const val DEFAULT_BUFFER_KB = 256
         const val DEFAULT_POOL_SIZE = 4
+        const val DEFAULT_CFPROXY = true
+        const val DEFAULT_CFPROXY_PRIORITY = true
+        const val DEFAULT_CFPROXY_USER_DOMAIN = ""
         val DEFAULT_SECRET = generateSecret()
         val DEFAULT_DC_IP_LINES = listOf(
             "2:149.154.167.220",
@@ -192,6 +205,9 @@ data class NormalizedProxyConfig(
     val logMaxMb: Double,
     val bufferKb: Int,
     val poolSize: Int,
+    val cfproxy: Boolean,
+    val cfproxyPriority: Boolean,
+    val cfproxyUserDomain: String,
     val checkUpdates: Boolean,
     val verbose: Boolean,
 )
