@@ -232,14 +232,16 @@ def _run_proxy_thread(on_port_busy: Callable[[str], None]) -> None:
     asyncio.set_event_loop(loop)
     stop_ev = asyncio.Event()
     _async_stop = (loop, stop_ev)
+    pc = tg_ws_proxy.proxy_config
 
     try:
         loop.run_until_complete(
             tg_ws_proxy._run(
                 stop_event=stop_ev,
-                upstream_mode=tg_ws_proxy._upstream_mode,
-                relay_url=tg_ws_proxy._relay_url,
-                relay_token=tg_ws_proxy._relay_token,
+                upstream_mode=pc.upstream_mode,
+                relay_url=pc.relay_url,
+                relay_token=pc.relay_token,
+                direct_ws_timeout_seconds=pc.direct_ws_timeout_seconds,
             )
         )
     except Exception as exc:
@@ -409,7 +411,7 @@ _ctk_root: Any = None
 _ctk_root_ready = threading.Event()
 
 
-def ensure_ctk_thread(ctk: Any) -> bool:
+def ensure_ctk_thread(ctk: Any, mode: str = "auto") -> bool:
     global _ctk_root
     if ctk is None:
         return False
@@ -421,7 +423,7 @@ def ensure_ctk_thread(ctk: Any) -> bool:
         from ui.ctk_theme import apply_ctk_appearance, install_tkinter_variable_del_guard
 
         install_tkinter_variable_del_guard()
-        apply_ctk_appearance(ctk)
+        apply_ctk_appearance(ctk, mode)
         _ctk_root = ctk.CTk()
         _ctk_root.withdraw()
         _ctk_root_ready.set()
