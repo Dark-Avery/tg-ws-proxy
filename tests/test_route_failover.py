@@ -148,13 +148,6 @@ class RouteSessionAccountingTests(unittest.IsolatedAsyncioTestCase):
             def update(self, data):
                 return data
 
-        class _Cipher:
-            def __init__(self, *_args, **_kwargs):
-                pass
-
-            def encryptor(self):
-                return _Transform()
-
         class _Reader:
             def __init__(self):
                 self._parts = [b"\x01", b"\x00" * 63]
@@ -217,7 +210,8 @@ class RouteSessionAccountingTests(unittest.IsolatedAsyncioTestCase):
                                      b"\x01" * 48)), \
                     patch("proxy.tg_ws_proxy._generate_relay_init",
                           return_value=b"\x02" * 64), \
-                    patch("proxy.tg_ws_proxy.Cipher", _Cipher), \
+                    patch("proxy.tg_ws_proxy.create_aes_ctr_transform",
+                          return_value=_Transform()), \
                     patch("proxy.tg_ws_proxy._try_direct_ws",
                           return_value=(_WebSocket(), False, False)), \
                     patch("proxy.tg_ws_proxy.bridge_ws_reencrypt",
