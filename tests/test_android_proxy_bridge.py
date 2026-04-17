@@ -182,16 +182,19 @@ class AndroidProxyBridgeTests(unittest.TestCase):
                 "",
                 "",
                 10.0,
+                False,
+                False,
+                "cdn.example.com",
             )
         finally:
             android_proxy_bridge.ProxyAppRuntime = original_runtime
 
-        self.assertEqual(captured["config"]["cfproxy"], True)
-        self.assertEqual(captured["config"]["cfproxy_priority"], True)
-        self.assertEqual(captured["config"]["cfproxy_user_domain"], "")
-        self.assertEqual(captured["start_proxy"]["cfproxy"], True)
-        self.assertEqual(captured["start_proxy"]["cfproxy_priority"], True)
-        self.assertEqual(captured["start_proxy"]["cfproxy_user_domain"], "")
+        self.assertEqual(captured["config"]["cfproxy"], False)
+        self.assertEqual(captured["config"]["cfproxy_priority"], False)
+        self.assertEqual(captured["config"]["cfproxy_user_domain"], "cdn.example.com")
+        self.assertEqual(captured["start_proxy"]["cfproxy"], False)
+        self.assertEqual(captured["start_proxy"]["cfproxy_priority"], False)
+        self.assertEqual(captured["start_proxy"]["cfproxy_user_domain"], "cdn.example.com")
 
     def test_get_update_status_json_merges_python_update_state(self):
         original_load_update_check = android_proxy_bridge._load_update_check
