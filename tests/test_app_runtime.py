@@ -102,6 +102,60 @@ class ProxyAppRuntimeTests(unittest.TestCase):
                  DEFAULT_CONFIG["relay_token"],
                  DEFAULT_CONFIG["direct_ws_timeout_seconds"]))
 
+    def test_run_proxy_thread_passes_only_stop_event_to_legacy_callable(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            captured = {}
+
+            async def fake_run_proxy(stop_event=None):
+                captured["kwargs"] = {"stop_event": stop_event}
+
+            runtime = ProxyAppRuntime(
+                Path(tmpdir),
+                run_proxy=fake_run_proxy,
+            )
+
+            runtime._run_proxy_thread(1443, {2: "149.154.167.220"}, "127.0.0.1")
+
+            self.assertEqual(set(captured["kwargs"].keys()), {"stop_event"})
+            self.assertIsNotNone(captured["kwargs"]["stop_event"])
+
+    def test_run_proxy_thread_passes_extended_kwargs_when_supported(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            captured = {}
+
+            async def fake_run_proxy(
+                stop_event=None,
+                upstream_mode=None,
+                relay_url=None,
+                relay_token=None,
+                direct_ws_timeout_seconds=None,
+            ):
+                captured["kwargs"] = {
+                    "stop_event": stop_event,
+                    "upstream_mode": upstream_mode,
+                    "relay_url": relay_url,
+                    "relay_token": relay_token,
+                    "direct_ws_timeout_seconds": direct_ws_timeout_seconds,
+                }
+
+            runtime = ProxyAppRuntime(
+                Path(tmpdir),
+                run_proxy=fake_run_proxy,
+            )
+
+            runtime._run_proxy_thread(1443, {2: "149.154.167.220"}, "127.0.0.1")
+
+            self.assertEqual(
+                captured["kwargs"],
+                {
+                    "stop_event": captured["kwargs"]["stop_event"],
+                    "upstream_mode": "telegram_ws_direct",
+                    "relay_url": None,
+                    "relay_token": "",
+                    "direct_ws_timeout_seconds": 10.0,
+                },
+            )
+
     def test_start_proxy_reports_bad_config(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             errors = []
@@ -128,7 +182,7 @@ class ProxyAppRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             errors = []
 
-            async def fake_run_proxy(stop_event=None, **kwargs):
+            async def fake_run_proxy(stop_event=None):
                 raise RuntimeError("proxy boom")
 
             runtime = ProxyAppRuntime(
@@ -145,7 +199,7 @@ class ProxyAppRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             errors = []
 
-            async def fake_run_proxy(stop_event=None, **kwargs):
+            async def fake_run_proxy(stop_event=None):
                 raise RuntimeError(
                     "[Errno 98] error while attempting to bind on address "
                     "('127.0.0.1', 1443): address already in use"

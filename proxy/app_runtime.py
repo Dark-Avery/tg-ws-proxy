@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio as _asyncio
+import inspect
 import json
 import logging
 import logging.handlers
@@ -151,6 +152,45 @@ class ProxyAppRuntime:
         if self.on_error:
             self.on_error(text)
 
+    def _build_run_proxy_kwargs(
+        self,
+        stop_ev: _asyncio.Event,
+        upstream_mode: str,
+        relay_url: str,
+        relay_token: str,
+        direct_ws_timeout_seconds: float,
+    ) -> dict:
+        call_kwargs = {"stop_event": stop_ev}
+        extra_kwargs = {
+            "upstream_mode": upstream_mode,
+            "relay_url": relay_url or None,
+            "relay_token": relay_token,
+            "direct_ws_timeout_seconds": direct_ws_timeout_seconds,
+        }
+
+        try:
+            signature = inspect.signature(self.run_proxy)
+        except (TypeError, ValueError):
+            call_kwargs.update(extra_kwargs)
+            return call_kwargs
+
+        params = signature.parameters
+        if any(
+            param.kind == inspect.Parameter.VAR_KEYWORD
+            for param in params.values()
+        ):
+            call_kwargs.update(extra_kwargs)
+            return call_kwargs
+
+        for key, value in extra_kwargs.items():
+            param = params.get(key)
+            if param and param.kind in (
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
+            ):
+                call_kwargs[key] = value
+        return call_kwargs
+
     def _run_proxy_thread(self, port: int, dc_opt: Dict[int, str],
                           host: str = "127.0.0.1",
                           upstream_mode: str = "telegram_ws_direct",
@@ -163,14 +203,15 @@ class ProxyAppRuntime:
         self._async_stop = (loop, stop_ev)
 
         try:
+            run_proxy_kwargs = self._build_run_proxy_kwargs(
+                stop_ev,
+                upstream_mode,
+                relay_url,
+                relay_token,
+                direct_ws_timeout_seconds,
+            )
             loop.run_until_complete(
-                self.run_proxy(
-                    stop_event=stop_ev,
-                    upstream_mode=upstream_mode,
-                    relay_url=relay_url or None,
-                    relay_token=relay_token,
-                    direct_ws_timeout_seconds=direct_ws_timeout_seconds,
-                )
+                self.run_proxy(**run_proxy_kwargs)
             )
         except Exception as exc:
             self.log.error("Proxy thread crashed: %s", exc)
