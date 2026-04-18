@@ -1,5 +1,8 @@
 package org.flowseal.tgwsproxy
 
+import java.io.File
+import java.nio.file.Files
+import java.nio.file.Paths
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -55,5 +58,25 @@ class AndroidAppearanceAndNotificationTest {
 
         assertTrue(details.contains("Fallback: CfProxy (prio)"))
         assertFalse(details.contains("DC mappings"))
+    }
+
+    @Test
+    fun notification_details_resource_uses_fallback_placeholder() {
+        val resourcePath = listOf(
+            Paths.get("app", "src", "main", "res", "values", "strings.xml"),
+            Paths.get("src", "main", "res", "values", "strings.xml"),
+            Paths.get("..", "app", "src", "main", "res", "values", "strings.xml"),
+        ).firstOrNull { Files.exists(it) }
+            ?: error("notification string resource not found from cwd=${System.getProperty("user.dir")}")
+        val xml = File(resourcePath.toString()).readText()
+        val rawValue = Regex(
+            """<string name="notification_details">(.*?)</string>""",
+            setOf(RegexOption.DOT_MATCHES_ALL),
+        ).find(xml)?.groupValues?.get(1)
+
+        assertEquals(
+            "Route: %1\$s\\n%2\$s\\nTraffic: ↑ %3\$s/s ↓ %4\$s/s\\nTransferred: ↑ %5\$s ↓ %6\$s",
+            rawValue,
+        )
     }
 }
