@@ -31,10 +31,6 @@ class AndroidAppearanceAndNotificationTest {
             port = 1443,
             secret = "0123456789abcdef0123456789abcdef",
             dcIpList = listOf("2:149.154.167.220"),
-            upstreamMode = UpstreamMode.AUTO,
-            relayUrl = "",
-            relayToken = "",
-            directWsTimeoutSeconds = 3.5,
             logMaxMb = 5.0,
             bufferKb = 256,
             poolSize = 4,
@@ -64,7 +60,7 @@ class AndroidAppearanceAndNotificationTest {
         )
 
         assertTrue(details.contains("Fallback: CfProxy (prio)"))
-        assertFalse(details.contains("DC mappings"))
+        assertFalse(details.contains("relay"))
     }
 
     @Test
@@ -84,6 +80,66 @@ class AndroidAppearanceAndNotificationTest {
             "Route: %1\$s\\n%2\$s\\nTraffic: ↑ %3\$s/s ↓ %4\$s/s\\nTransferred: ↑ %5\$s ↓ %6\$s",
             rawValue,
         )
+    }
+
+    @Test
+    fun android_strings_remove_relay_copy() {
+        val resourcePath = findResourcePath(
+            "app/src/main/res/values/strings.xml",
+            "src/main/res/values/strings.xml",
+            "../app/src/main/res/values/strings.xml",
+        )
+        val xml = File(resourcePath.toString()).readText()
+
+        assertFalse(xml.contains("relay_url_hint"))
+        assertFalse(xml.contains("relay_token_hint"))
+        assertFalse(xml.contains("upstream_mode_auto"))
+        assertFalse(xml.contains("upstream_mode_direct"))
+        assertFalse(xml.contains("upstream_mode_summary_direct"))
+        assertFalse(xml.contains("upstreamStatusValue"))
+        assertFalse(xml.contains("relay"))
+    }
+
+    @Test
+    fun settings_layout_removes_relay_inputs_and_timeout_controls() {
+        val resourcePath = findResourcePath(
+            "app/src/main/res/layout/activity_main.xml",
+            "src/main/res/layout/activity_main.xml",
+            "../app/src/main/res/layout/activity_main.xml",
+        )
+        val xml = File(resourcePath.toString()).readText()
+
+        assertFalse(xml.contains("""android:id="@+id/relayUrlLayout""""))
+        assertFalse(xml.contains("""android:id="@+id/relayTokenLayout""""))
+        assertFalse(xml.contains("""android:id="@+id/relayUrlInput""""))
+        assertFalse(xml.contains("""android:id="@+id/relayTokenInput""""))
+        assertFalse(xml.contains("""android:id="@+id/directWsTimeoutLayout""""))
+        assertFalse(xml.contains("""android:id="@+id/directWsTimeoutInput""""))
+        assertFalse(xml.contains("""android:id="@+id/upstreamModeInput""""))
+        assertFalse(xml.contains("""android:id="@+id/upstreamStatusValue""""))
+    }
+
+    @Test
+    fun release_page_actions_use_upstream_flowseal_releases() {
+        val mainActivityPath = findResourcePath(
+            "app/src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+            "src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+            "../app/src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+        )
+        val bridgePath = findResourcePath(
+            "app/src/main/python/android_proxy_bridge.py",
+            "src/main/python/android_proxy_bridge.py",
+            "../app/src/main/python/android_proxy_bridge.py",
+        )
+        val mainActivitySource = File(mainActivityPath.toString()).readText()
+        val bridgeSource = File(bridgePath.toString()).readText()
+
+        assertTrue(mainActivitySource.contains("https://github.com/Flowseal/tg-ws-proxy/releases/latest"))
+        assertTrue(bridgeSource.contains("https://github.com/Flowseal/tg-ws-proxy/releases/latest"))
+        assertTrue(mainActivitySource.contains("https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/Funding.md"))
+        assertFalse(mainActivitySource.contains("https://github.com/Dark-Avery/tg-ws-proxy/releases/latest"))
+        assertFalse(mainActivitySource.contains("https://github.com/Dark-Avery/tg-ws-proxy/blob/main/docs/Funding.md"))
+        assertFalse(bridgeSource.contains("https://github.com/Dark-Avery/tg-ws-proxy/releases/latest"))
     }
 
     @Test
@@ -161,7 +217,6 @@ class AndroidAppearanceAndNotificationTest {
         assertTrue(source.contains("override fun getFilter(): Filter = noFilter"))
         assertTrue(source.contains("values = items"))
         assertTrue(source.contains("binding.appearanceInput.setAdapter(adapter)"))
-        assertTrue(source.contains("binding.upstreamModeInput.setAdapter(adapter)"))
         assertTrue(source.contains("val adapter = NonFilteringArrayAdapter("))
     }
 

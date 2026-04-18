@@ -5,6 +5,7 @@ import android.content.ContextWrapper
 import android.content.SharedPreferences
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ProxySettingsStoreTest {
@@ -20,10 +21,6 @@ class ProxySettingsStoreTest {
                 secret = "0123456789abcdef0123456789abcdef",
                 dcIpList = listOf("2:149.154.167.220", "4:149.154.167.220"),
                 appearance = "dark",
-                upstreamMode = UpstreamMode.AUTO,
-                relayUrl = "wss://relay.example.com/connect",
-                relayToken = "relay-token",
-                directWsTimeoutSeconds = 3.5,
                 logMaxMb = 5.0,
                 bufferKb = 256,
                 poolSize = 4,
@@ -41,8 +38,43 @@ class ProxySettingsStoreTest {
         assertFalse(restored.cfproxyPriority)
         assertEquals("cdn.example.com", restored.cfproxyUserDomainText)
         assertEquals("dark", restored.appearance)
-        assertEquals(UpstreamMode.AUTO, restored.upstreamMode)
-        assertEquals("3.5", restored.directWsTimeoutText)
+    }
+
+    @Test
+    fun save_clears_legacy_relay_preferences() {
+        val context = TestContext()
+        val legacyPrefs = context.getSharedPreferences("proxy_settings", Context.MODE_PRIVATE)
+        legacyPrefs.edit()
+            .putString("upstream_mode", "relay_ws")
+            .putString("relay_url", "wss://relay.example.com/connect")
+            .putString("relay_token", "relay-token")
+            .putFloat("direct_ws_timeout_seconds", 7.5f)
+            .apply()
+
+        val store = ProxySettingsStore(context)
+        store.save(
+            NormalizedProxyConfig(
+                host = "127.0.0.1",
+                port = 1443,
+                secret = "0123456789abcdef0123456789abcdef",
+                dcIpList = listOf("2:149.154.167.220", "4:149.154.167.220"),
+                appearance = "auto",
+                logMaxMb = 5.0,
+                bufferKb = 256,
+                poolSize = 4,
+                cfproxy = true,
+                cfproxyPriority = true,
+                cfproxyUserDomain = "",
+                checkUpdates = false,
+                verbose = false,
+            ),
+        )
+
+        assertFalse(legacyPrefs.contains("upstream_mode"))
+        assertFalse(legacyPrefs.contains("relay_url"))
+        assertFalse(legacyPrefs.contains("relay_token"))
+        assertFalse(legacyPrefs.contains("direct_ws_timeout_seconds"))
+        assertNull(legacyPrefs.getString("relay_url", null))
     }
 
     private class TestContext : ContextWrapper(null) {

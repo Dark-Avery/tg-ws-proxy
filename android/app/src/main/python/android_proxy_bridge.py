@@ -11,7 +11,7 @@ from proxy.balancer import balancer
 import proxy.tg_ws_proxy as tg_ws_proxy
 
 
-RELEASES_PAGE_URL = "https://github.com/Dark-Avery/tg-ws-proxy/releases/latest"
+RELEASES_PAGE_URL = "https://github.com/Flowseal/tg-ws-proxy/releases/latest"
 
 
 _RUNTIME_LOCK = threading.RLock()
@@ -49,9 +49,6 @@ def start_proxy(app_dir: str, host: str, port: int, secret: str,
                 dc_ip_list: Iterable[object], log_max_mb: float = 5.0,
                 buf_kb: int = 256, pool_size: int = 4,
                 verbose: bool = False,
-                upstream_mode: str = "telegram_ws_direct",
-                relay_url: str = "", relay_token: str = "",
-                direct_ws_timeout_seconds: float = 10.0,
                 cfproxy: bool = True,
                 cfproxy_priority: bool = True,
                 cfproxy_user_domain: str = "") -> str:
@@ -79,10 +76,6 @@ def start_proxy(app_dir: str, host: str, port: int, secret: str,
             "port": int(port),
             "secret": str(secret).strip(),
             "dc_ip": _normalize_dc_ip_list(dc_ip_list),
-            "upstream_mode": str(upstream_mode or "telegram_ws_direct"),
-            "relay_url": str(relay_url or ""),
-            "relay_token": str(relay_token or ""),
-            "direct_ws_timeout_seconds": float(direct_ws_timeout_seconds),
             "log_max_mb": float(log_max_mb),
             "buf_kb": int(buf_kb),
             "pool_size": int(pool_size),

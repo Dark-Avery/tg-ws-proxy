@@ -8,10 +8,6 @@ data class ProxyConfig(
     val secretText: String = DEFAULT_SECRET,
     val dcIpText: String = DEFAULT_DC_IP_LINES.joinToString("\n"),
     val appearance: String = DEFAULT_APPEARANCE,
-    val upstreamMode: String = UpstreamMode.DIRECT,
-    val relayUrlText: String = "",
-    val relayTokenText: String = "",
-    val directWsTimeoutText: String = formatDecimal(DEFAULT_DIRECT_WS_TIMEOUT_SECONDS),
     val logMaxMbText: String = formatDecimal(DEFAULT_LOG_MAX_MB),
     val bufferKbText: String = DEFAULT_BUFFER_KB.toString(),
     val poolSizeText: String = DEFAULT_POOL_SIZE.toString(),
@@ -60,24 +56,6 @@ data class ProxyConfig(
         }
 
         val appearanceValue = normalizeAppearance(appearance)
-        val upstreamModeValue = UpstreamMode.normalize(upstreamMode)
-        val relayUrlValue = relayUrlText.trim()
-        val relayTokenValue = relayTokenText.trim()
-        val directWsTimeoutValue = directWsTimeoutText.trim().toDoubleOrNull()
-            ?: return ValidationResult(
-                errorMessage = "Таймаут direct WS должен быть числом."
-            )
-        if (directWsTimeoutValue <= 0.0) {
-            return ValidationResult(
-                errorMessage = "Таймаут direct WS должен быть больше нуля."
-            )
-        }
-        if (upstreamModeValue == UpstreamMode.RELAY && relayUrlValue.isEmpty()) {
-            return ValidationResult(errorMessage = "Укажите relay URL для режима Relay only.")
-        }
-        if (relayUrlValue.isNotEmpty() && !isRelayUrl(relayUrlValue)) {
-            return ValidationResult(errorMessage = "Relay URL должен быть в формате ws://host/path или wss://host/path.")
-        }
 
         val logMaxMbValue = logMaxMbText.trim().toDoubleOrNull()
             ?: return ValidationResult(
@@ -129,10 +107,6 @@ data class ProxyConfig(
                 secret = secretValue,
                 dcIpList = lines,
                 appearance = appearanceValue,
-                upstreamMode = upstreamModeValue,
-                relayUrl = relayUrlValue,
-                relayToken = relayTokenValue,
-                directWsTimeoutSeconds = directWsTimeoutValue,
                 logMaxMb = logMaxMbValue,
                 bufferKb = bufferKbValue,
                 poolSize = poolSizeValue,
@@ -149,7 +123,6 @@ data class ProxyConfig(
         const val DEFAULT_HOST = "127.0.0.1"
         const val DEFAULT_PORT = 1443
         const val DEFAULT_APPEARANCE = "auto"
-        const val DEFAULT_DIRECT_WS_TIMEOUT_SECONDS = 10.0
         const val DEFAULT_LOG_MAX_MB = 5.0
         const val DEFAULT_BUFFER_KB = 256
         const val DEFAULT_POOL_SIZE = 4
@@ -202,15 +175,6 @@ data class ProxyConfig(
             }
         }
 
-        private fun isRelayUrl(value: String): Boolean {
-            return runCatching { java.net.URI(value) }
-                .map { uri ->
-                    (uri.scheme == "ws" || uri.scheme == "wss") &&
-                        !uri.host.isNullOrBlank()
-                }
-                .getOrDefault(false)
-        }
-
         private fun isHostname(value: String): Boolean {
             if (
                 value.contains("://") ||
@@ -247,10 +211,6 @@ data class NormalizedProxyConfig(
     val secret: String,
     val dcIpList: List<String>,
     val appearance: String,
-    val upstreamMode: String,
-    val relayUrl: String,
-    val relayToken: String,
-    val directWsTimeoutSeconds: Double,
     val logMaxMb: Double,
     val bufferKb: Int,
     val poolSize: Int,

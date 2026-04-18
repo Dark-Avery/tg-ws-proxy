@@ -20,6 +20,14 @@ class MainActivityParityPhase3Test {
     }
 
     @Test
+    fun android_upstream_mode_is_direct_only() {
+        assertEquals(listOf(UpstreamMode.DIRECT), UpstreamMode.options.map { it.value })
+        assertEquals(UpstreamMode.DIRECT, UpstreamMode.normalize(UpstreamMode.DIRECT))
+        assertEquals(UpstreamMode.DIRECT, UpstreamMode.normalize("auto"))
+        assertEquals(UpstreamMode.DIRECT, UpstreamMode.normalize("relay_ws"))
+    }
+
+    @Test
     fun generated_secret_matches_mtproto_format() {
         val secret = ProxyConfig.generateSecretForUi()
 

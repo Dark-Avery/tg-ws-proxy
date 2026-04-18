@@ -15,10 +15,6 @@ class ProxyConfigTest {
             portText = "1443",
             secretText = "0123456789abcdef0123456789abcdef",
             dcIpText = "2:149.154.167.220\n4:149.154.167.220",
-            upstreamMode = UpstreamMode.AUTO,
-            relayUrlText = "wss://relay.example.com/connect",
-            relayTokenText = "relay-token",
-            directWsTimeoutText = "3.5",
             logMaxMbText = "5",
             bufferKbText = "256",
             poolSizeText = "4",
@@ -88,5 +84,12 @@ class ProxyConfigTest {
 
         assertNull(result.errorMessage)
         assertEquals("https://cdn.example.com/path", result.normalized?.cfproxyUserDomain)
+    }
+
+    @Test
+    fun android_upstream_mode_normalizes_to_direct_only() {
+        assertEquals(UpstreamMode.DIRECT, UpstreamMode.normalize(null))
+        assertEquals(UpstreamMode.DIRECT, UpstreamMode.normalize("auto"))
+        assertEquals(UpstreamMode.DIRECT, UpstreamMode.normalize("relay_ws"))
     }
 }

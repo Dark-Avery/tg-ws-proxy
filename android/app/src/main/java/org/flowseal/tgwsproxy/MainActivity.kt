@@ -15,7 +15,6 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
-import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -31,11 +30,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var settingsStore: ProxySettingsStore
     private var currentUpdateStatus: ProxyUpdateStatus? = null
     private var pendingPostRecreateAction = PendingPostRecreateAction.NONE
-    private val upstreamModeOptions by lazy {
-        UpstreamMode.options.map { option ->
-            option.value to getString(option.labelResId)
-        }
-    }
     private val appearanceOptions by lazy {
         appearanceModes().map { mode ->
             mode to appearanceLabelForValue(mode)
@@ -92,13 +86,6 @@ class MainActivity : AppCompatActivity() {
             AndroidSystemStatus.openAppSettings(this)
         }
         setupAppearanceDropdown()
-        setupUpstreamModeDropdown()
-        binding.relayUrlInput.doAfterTextChanged {
-            renderUpstreamConfigState(
-                selectedUpstreamModeValue(),
-                it?.toString().orEmpty(),
-            )
-        }
 
         val config = settingsStore.load()
         renderConfig(config)
@@ -247,13 +234,6 @@ class MainActivity : AppCompatActivity() {
         binding.secretInput.setText(config.secretText)
         binding.appearanceInput.setText(appearanceLabelForValue(config.appearance), false)
         binding.dcIpInput.setText(config.dcIpText)
-        binding.upstreamModeInput.setText(
-            upstreamLabelForValue(config.upstreamMode),
-            false,
-        )
-        binding.relayUrlInput.setText(config.relayUrlText)
-        binding.relayTokenInput.setText(config.relayTokenText)
-        binding.directWsTimeoutInput.setText(config.directWsTimeoutText)
         binding.cfProxySwitch.isChecked = config.cfproxy
         binding.cfProxyPrioritySwitch.isChecked = config.cfproxyPriority
         binding.cfProxyCustomDomainSwitch.isChecked = config.cfproxyUserDomainText.isNotBlank()
@@ -264,10 +244,6 @@ class MainActivity : AppCompatActivity() {
         binding.checkUpdatesSwitch.isChecked = config.checkUpdates
         binding.verboseSwitch.isChecked = config.verbose
         renderUpdateStatus(currentUpdateStatus, config.checkUpdates)
-        renderUpstreamConfigState(
-            config.upstreamMode,
-            config.relayUrlText,
-        )
         renderCfProxyState(config.cfproxy)
         renderCustomCfProxyDomainState(binding.cfProxyCustomDomainSwitch.isChecked)
     }
@@ -279,10 +255,6 @@ class MainActivity : AppCompatActivity() {
             secretText = binding.secretInput.text?.toString().orEmpty(),
             appearance = selectedAppearanceValue(),
             dcIpText = binding.dcIpInput.text?.toString().orEmpty(),
-            upstreamMode = selectedUpstreamModeValue(),
-            relayUrlText = binding.relayUrlInput.text?.toString().orEmpty(),
-            relayTokenText = binding.relayTokenInput.text?.toString().orEmpty(),
-            directWsTimeoutText = binding.directWsTimeoutInput.text?.toString().orEmpty(),
             cfproxy = binding.cfProxySwitch.isChecked,
             cfproxyPriority = binding.cfProxyPrioritySwitch.isChecked,
             cfproxyUserDomainText = if (binding.cfProxyCustomDomainSwitch.isChecked) {
@@ -299,7 +271,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onOpenReleasePageClicked() {
-        val url = currentUpdateStatus?.htmlUrl ?: "https://github.com/Dark-Avery/tg-ws-proxy/releases/latest"
+        val url = currentUpdateStatus?.htmlUrl ?: RELEASES_PAGE_URL
         val opened = runCatching {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         }.isSuccess
@@ -463,13 +435,6 @@ class MainActivity : AppCompatActivity() {
                             config.port,
                         )
                     }
-                    if (config != null) {
-                        binding.upstreamStatusValue.text = UpstreamMode.summary(
-                            this@MainActivity,
-                            config.upstreamMode,
-                            config.relayUrl,
-                        )
-                    }
                 }
             }
         }
@@ -531,29 +496,6 @@ class MainActivity : AppCompatActivity() {
         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
-    private fun setupUpstreamModeDropdown() {
-        val adapter = NonFilteringArrayAdapter(
-            this,
-            android.R.layout.simple_list_item_1,
-            upstreamModeOptions.map { it.second },
-        )
-        binding.upstreamModeInput.setAdapter(adapter)
-        binding.upstreamModeInput.setOnClickListener {
-            binding.upstreamModeInput.showDropDown()
-        }
-        binding.upstreamModeInput.setOnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) {
-                binding.upstreamModeInput.showDropDown()
-            }
-        }
-        binding.upstreamModeInput.setOnItemClickListener { _, _, _, _ ->
-            renderUpstreamConfigState(
-                selectedUpstreamModeValue(),
-                binding.relayUrlInput.text?.toString().orEmpty(),
-            )
-        }
-    }
-
     private fun setupAppearanceDropdown() {
         val adapter = NonFilteringArrayAdapter(
             this,
@@ -599,28 +541,6 @@ class MainActivity : AppCompatActivity() {
             ?: ProxyConfig.DEFAULT_APPEARANCE
     }
 
-    private fun upstreamLabelForValue(value: String): String {
-        return upstreamModeOptions.firstOrNull { it.first == UpstreamMode.normalize(value) }
-            ?.second
-            ?: upstreamModeOptions.first().second
-    }
-
-    private fun selectedUpstreamModeValue(): String {
-        val selectedLabel = binding.upstreamModeInput.text?.toString().orEmpty()
-        return upstreamModeOptions.firstOrNull { it.second == selectedLabel }
-            ?.first
-            ?: UpstreamMode.DIRECT
-    }
-
-    private fun renderUpstreamConfigState(upstreamMode: String, relayUrl: String) {
-        binding.relayUrlLayout.isVisible = shouldShowRelayFields(upstreamMode)
-        binding.relayTokenLayout.isVisible = shouldShowRelayFields(upstreamMode)
-        binding.directWsTimeoutLayout.isVisible = shouldShowDirectTimeout(upstreamMode)
-        val summary = UpstreamMode.summary(this, upstreamMode, relayUrl)
-        binding.upstreamModeHint.text = summary
-        binding.upstreamStatusValue.text = summary
-    }
-
     private fun renderCfProxyState(enabled: Boolean) {
         val showDetails = shouldShowCfProxyDetails(enabled)
         binding.cfProxyPrioritySwitch.isVisible = showDetails
@@ -646,21 +566,11 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val FUNDING_URL =
-            "https://github.com/Dark-Avery/tg-ws-proxy/blob/main/docs/Funding.md"
+            "https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/Funding.md"
         private const val STATE_PENDING_POST_RECREATE_ACTION = "pending_post_recreate_action"
 
         @JvmStatic
         fun appearanceModes(): List<String> = listOf("auto", "light", "dark")
-
-        @JvmStatic
-        fun shouldShowRelayFields(upstreamMode: String): Boolean {
-            return UpstreamMode.requiresRelayConfig(upstreamMode)
-        }
-
-        @JvmStatic
-        fun shouldShowDirectTimeout(upstreamMode: String): Boolean {
-            return UpstreamMode.normalize(upstreamMode) == UpstreamMode.AUTO
-        }
 
         @JvmStatic
         fun shouldShowCfProxyDetails(enabled: Boolean): Boolean {
@@ -671,6 +581,9 @@ class MainActivity : AppCompatActivity() {
         fun shouldEnableCustomCfProxyDomain(enabled: Boolean): Boolean {
             return enabled
         }
+
+        private const val RELEASES_PAGE_URL =
+            "https://github.com/Flowseal/tg-ws-proxy/releases/latest"
     }
 }
 

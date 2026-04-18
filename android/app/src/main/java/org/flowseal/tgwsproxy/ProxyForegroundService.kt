@@ -272,7 +272,6 @@ class ProxyForegroundService : Service() {
     private fun routeLabel(lastTransportRoute: String?): String {
         return when (lastTransportRoute) {
             "telegram_ws_direct" -> getString(R.string.notification_route_direct)
-            "relay_ws" -> getString(R.string.notification_route_relay)
             "tcp_fallback" -> getString(R.string.notification_route_tcp)
             else -> getString(R.string.notification_route_unknown)
         }

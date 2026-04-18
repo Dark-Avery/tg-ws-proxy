@@ -1,22 +1,16 @@
 package org.flowseal.tgwsproxy
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MainActivityCfProxyUiTest {
     @Test
-    fun relay_fields_are_visible_for_auto_and_relay_modes() {
-        assertTrue(MainActivity.shouldShowRelayFields(UpstreamMode.AUTO))
-        assertTrue(MainActivity.shouldShowRelayFields(UpstreamMode.RELAY))
-        assertFalse(MainActivity.shouldShowRelayFields(UpstreamMode.DIRECT))
-    }
-
-    @Test
-    fun direct_timeout_is_visible_only_for_auto_mode() {
-        assertTrue(MainActivity.shouldShowDirectTimeout(UpstreamMode.AUTO))
-        assertFalse(MainActivity.shouldShowDirectTimeout(UpstreamMode.RELAY))
-        assertFalse(MainActivity.shouldShowDirectTimeout(UpstreamMode.DIRECT))
+    fun android_ui_only_exposes_direct_upstream_mode() {
+        assertEquals(listOf(UpstreamMode.DIRECT), UpstreamMode.options.map { it.value })
+        assertEquals(UpstreamMode.DIRECT, UpstreamMode.normalize("auto"))
+        assertEquals(UpstreamMode.DIRECT, UpstreamMode.normalize("relay_ws"))
     }
 
     @Test

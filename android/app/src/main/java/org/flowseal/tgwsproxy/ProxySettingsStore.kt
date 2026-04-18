@@ -20,15 +20,6 @@ class ProxySettingsStore(context: Context) {
                     ProxyConfig.DEFAULT_APPEARANCE,
                 )
             ),
-            upstreamMode = preferences.getString(KEY_UPSTREAM_MODE, UpstreamMode.DIRECT).orEmpty(),
-            relayUrlText = preferences.getString(KEY_RELAY_URL, "").orEmpty(),
-            relayTokenText = preferences.getString(KEY_RELAY_TOKEN, "").orEmpty(),
-            directWsTimeoutText = ProxyConfig.formatDecimal(
-                preferences.getFloat(
-                    KEY_DIRECT_WS_TIMEOUT_SECONDS,
-                    ProxyConfig.DEFAULT_DIRECT_WS_TIMEOUT_SECONDS.toFloat(),
-                ).toDouble()
-            ),
             logMaxMbText = ProxyConfig.formatDecimal(
                 preferences.getFloat(
                     KEY_LOG_MAX_MB,
@@ -64,13 +55,10 @@ class ProxySettingsStore(context: Context) {
             .putString(KEY_SECRET, config.secret)
             .putString(KEY_DC_IP_TEXT, config.dcIpList.joinToString("\n"))
             .putString(KEY_APPEARANCE, config.appearance)
-            .putString(KEY_UPSTREAM_MODE, config.upstreamMode)
-            .putString(KEY_RELAY_URL, config.relayUrl)
-            .putString(KEY_RELAY_TOKEN, config.relayToken)
-            .putFloat(
-                KEY_DIRECT_WS_TIMEOUT_SECONDS,
-                config.directWsTimeoutSeconds.toFloat(),
-            )
+            .remove(KEY_UPSTREAM_MODE)
+            .remove(KEY_RELAY_URL)
+            .remove(KEY_RELAY_TOKEN)
+            .remove(KEY_DIRECT_WS_TIMEOUT_SECONDS)
             .putFloat(KEY_LOG_MAX_MB, config.logMaxMb.toFloat())
             .putInt(KEY_BUFFER_KB, config.bufferKb)
             .putInt(KEY_POOL_SIZE, config.poolSize)
