@@ -39,6 +39,10 @@
     <string name="relay_url_hint">Relay URL</string>
     <string name="relay_token_hint">Relay token</string>
     <string name="direct_ws_timeout_hint">Direct WS timeout before relay (seconds)</string>
+    <string name="cfproxy_section_label">CfProxy fallback</string>
+    <string name="cfproxy_enable_label">Enable CfProxy fallback</string>
+    <string name="cfproxy_priority_label">Try CfProxy before direct TCP fallback</string>
+    <string name="cfproxy_user_domain_hint">CfProxy user domain</string>
     <string name="log_max_mb_hint">Max log size before rotation (MB)</string>
     <string name="buffer_kb_hint">Socket buffer size (KB)</string>
     <string name="pool_size_hint">WS pool size per DC</string>

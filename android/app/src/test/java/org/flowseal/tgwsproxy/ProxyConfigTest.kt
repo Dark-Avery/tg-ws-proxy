@@ -78,4 +78,15 @@ class ProxyConfigTest {
             withSpace.errorMessage,
         )
     }
+
+    @Test
+    fun validate_ignores_cfproxy_domain_when_cfproxy_disabled() {
+        val result = validConfig(
+            cfproxy = false,
+            cfproxyUserDomainText = "https://cdn.example.com/path",
+        ).validate()
+
+        assertNull(result.errorMessage)
+        assertEquals("https://cdn.example.com/path", result.normalized?.cfproxyUserDomain)
+    }
 }

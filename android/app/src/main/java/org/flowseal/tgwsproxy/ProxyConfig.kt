@@ -111,6 +111,7 @@ data class ProxyConfig(
         val cfproxyPriorityValue = cfproxyPriority
         val cfproxyUserDomainValue = cfproxyUserDomainText.trim()
         if (
+            cfproxyValue &&
             cfproxyUserDomainValue.isNotEmpty() &&
             !isHostname(cfproxyUserDomainValue)
         ) {

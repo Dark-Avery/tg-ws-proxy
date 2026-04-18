@@ -61,6 +61,9 @@ class MainActivity : AppCompatActivity() {
         binding.checkUpdatesSwitch.setOnCheckedChangeListener { _, _ ->
             renderUpdateStatus(currentUpdateStatus, binding.checkUpdatesSwitch.isChecked)
         }
+        binding.cfProxySwitch.setOnCheckedChangeListener { _, isChecked ->
+            renderCfProxyState(isChecked)
+        }
         binding.disableBatteryOptimizationButton.setOnClickListener {
             AndroidSystemStatus.openBatteryOptimizationSettings(this)
         }
@@ -151,6 +154,9 @@ class MainActivity : AppCompatActivity() {
         binding.relayUrlInput.setText(config.relayUrlText)
         binding.relayTokenInput.setText(config.relayTokenText)
         binding.directWsTimeoutInput.setText(config.directWsTimeoutText)
+        binding.cfProxySwitch.isChecked = config.cfproxy
+        binding.cfProxyPrioritySwitch.isChecked = config.cfproxyPriority
+        binding.cfProxyUserDomainInput.setText(config.cfproxyUserDomainText)
         binding.logMaxMbInput.setText(config.logMaxMbText)
         binding.bufferKbInput.setText(config.bufferKbText)
         binding.poolSizeInput.setText(config.poolSizeText)
@@ -161,6 +167,7 @@ class MainActivity : AppCompatActivity() {
             config.upstreamMode,
             config.relayUrlText,
         )
+        renderCfProxyState(config.cfproxy)
     }
 
     private fun collectConfigFromForm(): ProxyConfig {
@@ -173,6 +180,9 @@ class MainActivity : AppCompatActivity() {
             relayUrlText = binding.relayUrlInput.text?.toString().orEmpty(),
             relayTokenText = binding.relayTokenInput.text?.toString().orEmpty(),
             directWsTimeoutText = binding.directWsTimeoutInput.text?.toString().orEmpty(),
+            cfproxy = binding.cfProxySwitch.isChecked,
+            cfproxyPriority = binding.cfProxyPrioritySwitch.isChecked,
+            cfproxyUserDomainText = binding.cfProxyUserDomainInput.text?.toString().orEmpty(),
             logMaxMbText = binding.logMaxMbInput.text?.toString().orEmpty(),
             bufferKbText = binding.bufferKbInput.text?.toString().orEmpty(),
             poolSizeText = binding.poolSizeInput.text?.toString().orEmpty(),
@@ -401,13 +411,34 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderUpstreamConfigState(upstreamMode: String, relayUrl: String) {
-        val requiresRelay = UpstreamMode.requiresRelayConfig(upstreamMode)
-        val needsDirectTimeout = UpstreamMode.normalize(upstreamMode) == UpstreamMode.AUTO
-        binding.relayUrlLayout.isVisible = requiresRelay
-        binding.relayTokenLayout.isVisible = requiresRelay
-        binding.directWsTimeoutLayout.isVisible = needsDirectTimeout
+        binding.relayUrlLayout.isVisible = shouldShowRelayFields(upstreamMode)
+        binding.relayTokenLayout.isVisible = shouldShowRelayFields(upstreamMode)
+        binding.directWsTimeoutLayout.isVisible = shouldShowDirectTimeout(upstreamMode)
         val summary = UpstreamMode.summary(this, upstreamMode, relayUrl)
         binding.upstreamModeHint.text = summary
         binding.upstreamStatusValue.text = summary
+    }
+
+    private fun renderCfProxyState(enabled: Boolean) {
+        val showDetails = shouldShowCfProxyDetails(enabled)
+        binding.cfProxyPrioritySwitch.isVisible = showDetails
+        binding.cfProxyUserDomainLayout.isVisible = showDetails
+    }
+
+    companion object {
+        @JvmStatic
+        fun shouldShowRelayFields(upstreamMode: String): Boolean {
+            return UpstreamMode.requiresRelayConfig(upstreamMode)
+        }
+
+        @JvmStatic
+        fun shouldShowDirectTimeout(upstreamMode: String): Boolean {
+            return UpstreamMode.normalize(upstreamMode) == UpstreamMode.AUTO
+        }
+
+        @JvmStatic
+        fun shouldShowCfProxyDetails(enabled: Boolean): Boolean {
+            return enabled
+        }
     }
 }
