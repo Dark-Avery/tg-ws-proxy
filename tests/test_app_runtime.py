@@ -106,6 +106,8 @@ class ProxyAppRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             thread_holder = {}
             import proxy.tg_ws_proxy as tg_ws_proxy
+            import proxy.config as config_mod
+            import proxy.bridge as bridge_mod
 
             def fake_thread_factory(**kwargs):
                 thread = _FakeThread(**kwargs)
@@ -141,6 +143,8 @@ class ProxyAppRuntimeTests(unittest.TestCase):
 
             self.assertTrue(started)
             self.assertTrue(thread_holder["thread"].started)
+            self.assertIs(applied_proxy_config, config_mod.proxy_config)
+            self.assertIs(applied_proxy_config, bridge_mod.proxy_config)
             self.assertFalse(applied_proxy_config.fallback_cfproxy)
             self.assertFalse(applied_proxy_config.fallback_cfproxy_priority)
             self.assertEqual(

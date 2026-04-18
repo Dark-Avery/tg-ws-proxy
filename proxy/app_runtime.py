@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 from typing import Callable, Dict, Optional
 
+import proxy.config as tg_config
 import proxy.tg_ws_proxy as tg_ws_proxy
 
 
@@ -273,7 +274,10 @@ class ProxyAppRuntime:
             self._emit_error("Ошибка конфигурации:\n%s" % exc)
             return False
 
-        tg_ws_proxy.proxy_config = self._build_core_config(active_cfg, dc_opt)
+        next_proxy_config = self._build_core_config(active_cfg, dc_opt)
+        canonical_proxy_config = tg_config.proxy_config
+        canonical_proxy_config.__dict__.update(next_proxy_config.__dict__)
+        tg_ws_proxy.proxy_config = canonical_proxy_config
         self.save_config(active_cfg)
 
         self.log.info("Starting proxy on %s:%d ...", host, port)
