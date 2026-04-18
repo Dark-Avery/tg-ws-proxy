@@ -267,12 +267,15 @@ def _edit_config_dialog() -> None:
 
         def on_save() -> None:
             from tkinter import messagebox
+            from ui.ctk_theme import apply_ctk_appearance
+
             merged = validate_config_form(widgets, DEFAULT_CONFIG, include_autostart=_supports_autostart())
             if isinstance(merged, str):
                 messagebox.showerror("TG WS Proxy — Ошибка", merged, parent=root)
                 return
             save_config(merged)
             _config.update(merged)
+            apply_ctk_appearance(ctk, _config.get("appearance", "auto"))
             log.info("Config saved: %s", merged)
             if _supports_autostart():
                 set_autostart_enabled(bool(merged.get("autostart", False)))

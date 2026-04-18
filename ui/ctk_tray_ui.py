@@ -379,10 +379,6 @@ def install_tray_config_form(
         value=_APPEARANCE_FROM_CFG.get(cfg.get("appearance", "auto"), "Авто")
     )
 
-    def _on_appearance_change(choice: str) -> None:
-        cfg_val = _APPEARANCE_TO_CFG.get(choice, "auto")
-        ctk.set_appearance_mode(_APPEARANCE_TO_CTK[cfg_val])
-
     ctk.CTkComboBox(
         header,
         values=_APPEARANCE_OPTIONS,
@@ -400,7 +396,6 @@ def install_tray_config_form(
         dropdown_hover_color=theme.field_border,
         corner_radius=8,
         state="readonly",
-        command=_on_appearance_change,
     ).pack(side="right")
 
     ctk.CTkButton(

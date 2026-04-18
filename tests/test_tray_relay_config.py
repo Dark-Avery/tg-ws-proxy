@@ -83,6 +83,13 @@ class TrayRelayConfigTests(unittest.TestCase):
             "upstream_mode": tray_common.tg_ws_proxy.proxy_config.upstream_mode,
             "relay_url": tray_common.tg_ws_proxy.proxy_config.relay_url,
             "relay_token": tray_common.tg_ws_proxy.proxy_config.relay_token,
+            "fallback_cfproxy": tray_common.tg_ws_proxy.proxy_config.fallback_cfproxy,
+            "fallback_cfproxy_priority": (
+                tray_common.tg_ws_proxy.proxy_config.fallback_cfproxy_priority
+            ),
+            "cfproxy_user_domain": (
+                tray_common.tg_ws_proxy.proxy_config.cfproxy_user_domain
+            ),
         }
         tray_common._proxy_thread = None
         tray_common._async_stop = None
@@ -102,6 +109,15 @@ class TrayRelayConfigTests(unittest.TestCase):
         tray_common.tg_ws_proxy.proxy_config.relay_token = self._orig_proxy_config[
             "relay_token"
         ]
+        tray_common.tg_ws_proxy.proxy_config.fallback_cfproxy = (
+            self._orig_proxy_config["fallback_cfproxy"]
+        )
+        tray_common.tg_ws_proxy.proxy_config.fallback_cfproxy_priority = (
+            self._orig_proxy_config["fallback_cfproxy_priority"]
+        )
+        tray_common.tg_ws_proxy.proxy_config.cfproxy_user_domain = (
+            self._orig_proxy_config["cfproxy_user_domain"]
+        )
         tray_common.tg_ws_proxy.proxy_config.direct_ws_timeout_seconds = (
             self._orig_direct_timeout
         )
@@ -194,6 +210,53 @@ class TrayRelayConfigTests(unittest.TestCase):
         self.assertFalse(result["cfproxy_priority"])
         self.assertEqual(result["cfproxy_user_domain"], "cdn.example.com")
         self.assertEqual(result["appearance"], "dark")
+
+    def test_start_proxy_applies_cfproxy_settings_to_runtime_config(self):
+        cfg = default_tray_config()
+        cfg.update(
+            {
+                "cfproxy": False,
+                "cfproxy_priority": False,
+                "cfproxy_user_domain": "cdn.example.com",
+            }
+        )
+
+        async def fake_run(**_kwargs):
+            return None
+
+        class FakeThread:
+            def __init__(self, *, target, args=(), kwargs=None, **_unused):
+                self._target = target
+                self._args = args
+                self._kwargs = kwargs or {}
+                self._alive = False
+
+            def is_alive(self):
+                return self._alive
+
+            def start(self):
+                self._alive = True
+                try:
+                    self._target(*self._args, **self._kwargs)
+                finally:
+                    self._alive = False
+
+        with patch.object(tray_common.tg_ws_proxy, "_run", fake_run), patch.object(
+            tray_common.threading, "Thread", FakeThread
+        ):
+            tray_common.start_proxy(
+                cfg,
+                lambda message: self.fail(f"unexpected tray error: {message}"),
+            )
+
+        self.assertFalse(tray_common.tg_ws_proxy.proxy_config.fallback_cfproxy)
+        self.assertFalse(
+            tray_common.tg_ws_proxy.proxy_config.fallback_cfproxy_priority
+        )
+        self.assertEqual(
+            tray_common.tg_ws_proxy.proxy_config.cfproxy_user_domain,
+            "cdn.example.com",
+        )
 
 
 if __name__ == "__main__":

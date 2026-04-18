@@ -273,6 +273,13 @@ def apply_proxy_config(cfg: dict) -> bool:
     pc.dc_redirects = dc_redirects
     pc.buffer_size = max(4, cfg.get("buf_kb", DEFAULT_CONFIG["buf_kb"])) * 1024
     pc.pool_size = max(0, cfg.get("pool_size", DEFAULT_CONFIG["pool_size"]))
+    pc.fallback_cfproxy = bool(cfg.get("cfproxy", DEFAULT_CONFIG["cfproxy"]))
+    pc.fallback_cfproxy_priority = bool(
+        cfg.get("cfproxy_priority", DEFAULT_CONFIG["cfproxy_priority"])
+    )
+    pc.cfproxy_user_domain = str(
+        cfg.get("cfproxy_user_domain", DEFAULT_CONFIG["cfproxy_user_domain"])
+    ).strip()
     pc.upstream_mode = cfg.get("upstream_mode", DEFAULT_CONFIG["upstream_mode"])
     pc.relay_url = cfg.get("relay_url", DEFAULT_CONFIG["relay_url"])
     pc.relay_token = cfg.get("relay_token", DEFAULT_CONFIG["relay_token"])
