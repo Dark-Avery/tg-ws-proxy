@@ -181,10 +181,11 @@ class ProxyForegroundService : Service() {
         statusText: String,
     ): NotificationPayload {
         val endpointText = getString(R.string.notification_endpoint, config.host, config.port)
+        val fallbackSummary = NotificationSummary.formatFallbackSummary(config)
         val detailsText = getString(
             R.string.notification_details,
             routeLabel(trafficState.lastTransportRoute),
-            config.dcIpList.size,
+            fallbackSummary,
             formatRate(trafficState.upBytesPerSecond),
             formatRate(trafficState.downBytesPerSecond),
             formatBytes(trafficState.totalBytesUp),
@@ -361,6 +362,18 @@ class ProxyForegroundService : Service() {
         private const val ACTION_START = "org.flowseal.tgwsproxy.action.START"
         private const val ACTION_STOP = "org.flowseal.tgwsproxy.action.STOP"
         private const val ACTION_RESTART = "org.flowseal.tgwsproxy.action.RESTART"
+
+        @JvmStatic
+        fun formatNotificationDetailsForTest(
+            routeLabel: String,
+            fallbackSummary: String,
+            upRate: String,
+            downRate: String,
+            totalUp: String,
+            totalDown: String,
+        ): String {
+            return "Route: $routeLabel\n$fallbackSummary\nTraffic: ↑ $upRate/s ↓ $downRate/s\nTransferred: ↑ $totalUp ↓ $totalDown"
+        }
 
         fun start(context: Context) {
             val intent = Intent(context, ProxyForegroundService::class.java).apply {

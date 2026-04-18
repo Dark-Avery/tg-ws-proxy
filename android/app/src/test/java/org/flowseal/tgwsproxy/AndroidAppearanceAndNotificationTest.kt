@@ -1,6 +1,8 @@
 package org.flowseal.tgwsproxy
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AndroidAppearanceAndNotificationTest {
@@ -38,5 +40,20 @@ class AndroidAppearanceAndNotificationTest {
             NotificationSummary.FALLBACK_CFPROXY_CUSTOM,
             NotificationSummary.formatFallbackSummary(config),
         )
+    }
+
+    @Test
+    fun notification_details_format_uses_fallback_summary_not_dc_count() {
+        val details = ProxyForegroundService.formatNotificationDetailsForTest(
+            routeLabel = "Direct Telegram WS",
+            fallbackSummary = NotificationSummary.FALLBACK_CFPROXY_PRIO,
+            upRate = "1.0 KB",
+            downRate = "2.0 KB",
+            totalUp = "3.0 KB",
+            totalDown = "4.0 KB",
+        )
+
+        assertTrue(details.contains("Fallback: CfProxy (prio)"))
+        assertFalse(details.contains("DC mappings"))
     }
 }
