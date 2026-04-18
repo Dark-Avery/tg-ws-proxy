@@ -65,6 +65,7 @@ class MainActivity : AppCompatActivity() {
         binding.openTelegramButton.setOnClickListener { onOpenTelegramClicked() }
         binding.openReleasePageButton.setOnClickListener { onOpenReleasePageClicked() }
         binding.donateButton.setOnClickListener { onOpenDonateClicked() }
+        binding.secretRegenerateButton.setOnClickListener { onRegenerateSecretClicked() }
         binding.checkUpdatesSwitch.setOnCheckedChangeListener { _, _ ->
             renderUpdateStatus(currentUpdateStatus, binding.checkUpdatesSwitch.isChecked)
         }
@@ -153,6 +154,10 @@ class MainActivity : AppCompatActivity() {
         if (!TelegramProxyIntent.open(this, config)) {
             Snackbar.make(binding.root, R.string.telegram_not_found, Snackbar.LENGTH_LONG).show()
         }
+    }
+
+    private fun onRegenerateSecretClicked() {
+        binding.secretInput.setText(ProxyConfig.generateSecretForUi())
     }
 
     private fun onOpenDonateClicked() {
@@ -496,10 +501,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applyAppearance(mode: String) {
-        when (ProxyConfig.normalizeAppearance(mode)) {
-            "light" -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
-            "dark" -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
-            else -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+        val nightMode = when (ProxyConfig.normalizeAppearance(mode)) {
+            "light" -> AppCompatDelegate.MODE_NIGHT_NO
+            "dark" -> AppCompatDelegate.MODE_NIGHT_YES
+            else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+        }
+        AppCompatDelegate.setDefaultNightMode(nightMode)
+        if (delegate.localNightMode != nightMode) {
+            delegate.localNightMode = nightMode
         }
     }
 

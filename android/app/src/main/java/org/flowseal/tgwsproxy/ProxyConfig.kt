@@ -178,6 +178,10 @@ data class ProxyConfig(
             }
         }
 
+        fun generateSecretForUi(): String {
+            return generateSecret()
+        }
+
         private fun generateSecret(): String {
             val bytes = ByteArray(16)
             SecureRandom().nextBytes(bytes)

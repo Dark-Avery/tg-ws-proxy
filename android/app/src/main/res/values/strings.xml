@@ -34,7 +34,9 @@
     <string name="host_hint">Proxy host</string>
     <string name="port_hint">Proxy port</string>
     <string name="secret_hint">MTProto secret (32 hex characters)</string>
+    <string name="secret_regenerate_button">Regenerate Secret</string>
     <string name="appearance_label">Appearance</string>
+    <string name="quick_controls_label">Quick Controls</string>
     <string name="appearance_auto">Auto</string>
     <string name="appearance_light">Light</string>
     <string name="appearance_dark">Dark</string>
