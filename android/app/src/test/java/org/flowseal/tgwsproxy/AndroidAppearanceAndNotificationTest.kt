@@ -128,4 +128,23 @@ class AndroidAppearanceAndNotificationTest {
         assertFalse(source.contains("delegate.localNightMode"))
         assertTrue(source.contains("AppCompatDelegate.getDefaultNightMode() != nightMode"))
     }
+
+    @Test
+    fun appearance_is_applied_from_saved_state_before_ui_inflation_only() {
+        val sourcePath = findResourcePath(
+            "app/src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+            "src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+            "../app/src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+        )
+        val source = File(sourcePath.toString()).readText()
+        val preCreateApply = source.indexOf("applyAppearance(initialSettingsStore.load().appearance)")
+        val superOnCreate = source.indexOf("super.onCreate(savedInstanceState)")
+        val renderConfigStart = source.indexOf("private fun renderConfig(config: ProxyConfig) {")
+        val collectConfigStart = source.indexOf("private fun collectConfigFromForm(): ProxyConfig {")
+        val renderConfigBody = source.substring(renderConfigStart, collectConfigStart)
+
+        assertTrue(preCreateApply in 0 until superOnCreate)
+        assertFalse(source.contains("binding.appearanceInput.setOnItemClickListener { _, _, _, _ ->\n            applyAppearance(selectedAppearanceValue())"))
+        assertFalse(renderConfigBody.contains("applyAppearance(config.appearance)"))
+    }
 }

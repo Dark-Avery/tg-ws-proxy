@@ -52,9 +52,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val initialSettingsStore = ProxySettingsStore(this)
+        applyAppearance(initialSettingsStore.load().appearance)
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
-        settingsStore = ProxySettingsStore(this)
+        settingsStore = initialSettingsStore
         setContentView(binding.root)
 
         binding.startButton.setOnClickListener { onStartClicked() }
@@ -188,7 +190,6 @@ class MainActivity : AppCompatActivity() {
         binding.poolSizeInput.setText(config.poolSizeText)
         binding.checkUpdatesSwitch.isChecked = config.checkUpdates
         binding.verboseSwitch.isChecked = config.verbose
-        applyAppearance(config.appearance)
         renderUpdateStatus(currentUpdateStatus, config.checkUpdates)
         renderUpstreamConfigState(
             config.upstreamMode,
@@ -494,9 +495,6 @@ class MainActivity : AppCompatActivity() {
             if (hasFocus) {
                 binding.appearanceInput.showDropDown()
             }
-        }
-        binding.appearanceInput.setOnItemClickListener { _, _, _, _ ->
-            applyAppearance(selectedAppearanceValue())
         }
     }
 
