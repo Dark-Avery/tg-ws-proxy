@@ -272,6 +272,24 @@
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/appearanceLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:hint="@string/appearance_label"
+                    app:endIconMode="dropdown_menu">
+
+                    <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                        android:id="@+id/appearanceInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:focusable="false"
+                        android:clickable="true"
+                        android:cursorVisible="false"
+                        android:inputType="none" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="16dp"
@@ -358,6 +376,14 @@
                         android:inputType="numberDecimal"
                         android:maxLines="1" />
                 </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/donateButton"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/donate_button" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -393,6 +419,13 @@
                     android:layout_marginTop="12dp"
                     android:text="@string/cfproxy_priority_label" />
 
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/cfProxyCustomDomainSwitch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/cfproxy_custom_domain_label" />
+
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/cfProxyUserDomainLayout"
                     android:layout_width="match_parent"
@@ -407,6 +440,14 @@
                         android:inputType="textUri"
                         android:maxLines="1" />
                 </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/cfProxyTestButton"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/cfproxy_test_button" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

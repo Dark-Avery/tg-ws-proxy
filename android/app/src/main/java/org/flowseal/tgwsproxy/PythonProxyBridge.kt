@@ -70,6 +70,41 @@ object PythonProxyBridge {
         )
     }
 
+    fun runCfProxyTest(context: Context, customDomain: String): CfProxyTestResult {
+        val payload = getModule(context).callAttr(
+            "run_cfproxy_test_json",
+            customDomain,
+        ).toString()
+        return parseCfProxyTestResult(payload)
+    }
+
+    internal fun parseCfProxyTestResult(payload: String): CfProxyTestResult {
+        val json = JSONObject(payload)
+        return cfProxyTestResultFromMap(
+            mapOf(
+                "ok" to json.opt("ok"),
+                "mode" to json.opt("mode"),
+                "domain" to json.opt("domain"),
+                "selected_domain" to json.opt("selected_domain"),
+                "ip" to json.opt("ip"),
+                "status" to json.opt("status"),
+                "detail" to json.opt("detail"),
+            ),
+        )
+    }
+
+    internal fun cfProxyTestResultFromMap(values: Map<String, Any?>): CfProxyTestResult {
+        return CfProxyTestResult(
+            ok = values["ok"] as? Boolean ?: false,
+            mode = values["mode"]?.toString().orEmpty().ifBlank { "auto" },
+            domain = values["domain"]?.toString().orEmpty().ifBlank { null },
+            selectedDomain = values["selected_domain"]?.toString().orEmpty().ifBlank { null },
+            ip = values["ip"]?.toString().orEmpty().ifBlank { null },
+            status = values["status"]?.toString().orEmpty().ifBlank { null },
+            detail = values["detail"]?.toString().orEmpty().ifBlank { null },
+        )
+    }
+
     private fun getModule(context: Context) =
         getPython(context.applicationContext).getModule(MODULE_NAME)
 
@@ -108,4 +143,14 @@ data class ProxyUpdateStatus(
     val checked: Boolean = false,
     val htmlUrl: String? = null,
     val error: String? = null,
+)
+
+data class CfProxyTestResult(
+    val ok: Boolean = false,
+    val mode: String = "auto",
+    val domain: String? = null,
+    val selectedDomain: String? = null,
+    val ip: String? = null,
+    val status: String? = null,
+    val detail: String? = null,
 )

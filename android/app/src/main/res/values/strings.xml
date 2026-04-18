@@ -34,6 +34,10 @@
     <string name="host_hint">Proxy host</string>
     <string name="port_hint">Proxy port</string>
     <string name="secret_hint">MTProto secret (32 hex characters)</string>
+    <string name="appearance_label">Appearance</string>
+    <string name="appearance_auto">Auto</string>
+    <string name="appearance_light">Light</string>
+    <string name="appearance_dark">Dark</string>
     <string name="dc_ip_hint">DC to IP mappings (one DC:IP per line)</string>
     <string name="upstream_mode_hint">Upstream route mode</string>
     <string name="relay_url_hint">Relay URL</string>
@@ -42,7 +46,12 @@
     <string name="cfproxy_section_label">CfProxy fallback</string>
     <string name="cfproxy_enable_label">Enable CfProxy fallback</string>
     <string name="cfproxy_priority_label">Try CfProxy before direct TCP fallback</string>
+    <string name="cfproxy_custom_domain_label">Custom domain</string>
     <string name="cfproxy_user_domain_hint">CfProxy user domain</string>
+    <string name="cfproxy_test_button">CfProxy Test</string>
+    <string name="cfproxy_test_running">Testing CfProxy…</string>
+    <string name="cfproxy_test_passed">CfProxy OK: %1$s</string>
+    <string name="cfproxy_test_failed">CfProxy failed: %1$s</string>
     <string name="log_max_mb_hint">Max log size before rotation (MB)</string>
     <string name="buffer_kb_hint">Socket buffer size (KB)</string>
     <string name="pool_size_hint">WS pool size per DC</string>
@@ -61,6 +70,7 @@
     <string name="restart_button">Restart Proxy</string>
     <string name="open_telegram_button">Open in Telegram</string>
     <string name="open_logs_button">Open Logs</string>
+    <string name="donate_button">Donate</string>
     <string name="disable_battery_optimization_button">Disable Battery Optimization</string>
     <string name="open_app_settings_button">Open App Settings</string>
     <string name="last_error_label">Last service error</string>
