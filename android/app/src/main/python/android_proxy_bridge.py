@@ -7,6 +7,7 @@ from typing import Iterable, Optional
 
 from proxy.app_runtime import ProxyAppRuntime
 from proxy import __version__
+from proxy.balancer import balancer
 import proxy.tg_ws_proxy as tg_ws_proxy
 
 
@@ -148,6 +149,33 @@ def get_runtime_stats_json() -> str:
 def _load_update_check():
     from utils import update_check
     return update_check
+
+
+def _load_cfproxy_diagnostics():
+    from utils import cfproxy_diagnostics
+    return cfproxy_diagnostics
+
+
+def run_cfproxy_test_json(custom_domain: str = "") -> str:
+    domain = str(custom_domain or "").strip()
+    try:
+        diagnostics = _load_cfproxy_diagnostics()
+        if domain:
+            payload = dict(diagnostics.run_connectivity_test(domain))
+            payload["mode"] = "custom"
+        else:
+            _, payload = diagnostics.run_auto_test(balancer.domains)
+        return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    except Exception as exc:
+        payload = {
+            "ok": False,
+            "domain": domain,
+            "ip": "",
+            "status": "error",
+            "detail": str(exc),
+            "mode": "custom" if domain else "auto",
+        }
+        return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
 def get_update_status_json(check_now: bool = False) -> str:

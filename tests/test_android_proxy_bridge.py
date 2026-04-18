@@ -196,6 +196,82 @@ class AndroidProxyBridgeTests(unittest.TestCase):
         self.assertEqual(captured["start_proxy"]["cfproxy_priority"], False)
         self.assertEqual(captured["start_proxy"]["cfproxy_user_domain"], "cdn.example.com")
 
+    def test_run_cfproxy_test_json_uses_custom_domain(self):
+        captured = {}
+        original_loader = android_proxy_bridge._load_cfproxy_diagnostics
+        try:
+            class FakeDiagnostics:
+                @staticmethod
+                def run_connectivity_test(domain):
+                    captured["domain"] = domain
+                    return {
+                        "ok": True,
+                        "domain": domain,
+                        "ip": "203.0.113.40",
+                        "status": "ok",
+                        "detail": "6/6 endpoints reachable",
+                    }
+
+            android_proxy_bridge._load_cfproxy_diagnostics = lambda: FakeDiagnostics
+            result = json.loads(
+                android_proxy_bridge.run_cfproxy_test_json("  cdn.example.com  ")
+            )
+        finally:
+            android_proxy_bridge._load_cfproxy_diagnostics = original_loader
+
+        self.assertEqual(captured["domain"], "cdn.example.com")
+        self.assertEqual(
+            result,
+            {
+                "ok": True,
+                "domain": "cdn.example.com",
+                "ip": "203.0.113.40",
+                "status": "ok",
+                "detail": "6/6 endpoints reachable",
+                "mode": "custom",
+            },
+        )
+
+    def test_run_cfproxy_test_json_uses_balancer_domains_for_auto_mode(self):
+        captured = {}
+        original_loader = android_proxy_bridge._load_cfproxy_diagnostics
+        original_domains = getattr(android_proxy_bridge.balancer, "domains", None)
+        try:
+            class FakeDiagnostics:
+                @staticmethod
+                def run_auto_test(domains):
+                    captured["domains"] = list(domains)
+                    return (
+                        "auto.example.com",
+                        {
+                            "ok": False,
+                            "domain": "auto.example.com",
+                            "ip": "203.0.113.41",
+                            "status": "partial",
+                            "detail": "4/6 endpoints reachable",
+                            "mode": "auto",
+                            "selected_domain": "auto.example.com",
+                        },
+                    )
+
+            android_proxy_bridge._load_cfproxy_diagnostics = lambda: FakeDiagnostics
+            android_proxy_bridge.balancer.domains = [
+                "first.example.com",
+                "auto.example.com",
+            ]
+            result = json.loads(android_proxy_bridge.run_cfproxy_test_json())
+        finally:
+            android_proxy_bridge._load_cfproxy_diagnostics = original_loader
+            android_proxy_bridge.balancer.domains = original_domains
+
+        self.assertEqual(
+            captured["domains"],
+            ["first.example.com", "auto.example.com"],
+        )
+        self.assertEqual(result["mode"], "auto")
+        self.assertEqual(result["selected_domain"], "auto.example.com")
+        self.assertEqual(result["status"], "partial")
+
     def test_get_update_status_json_merges_python_update_state(self):
         original_load_update_check = android_proxy_bridge._load_update_check
         try:

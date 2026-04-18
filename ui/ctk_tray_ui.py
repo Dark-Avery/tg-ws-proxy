@@ -8,6 +8,11 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from proxy import __version__, get_link_host, parse_dc_ip_list
 from proxy.balancer import balancer
+from utils.cfproxy_diagnostics import (
+    CFPROXY_TEST_DCS as _CFPROXY_TEST_DCS,
+    run_auto_test as _run_cfproxy_auto_test,
+    run_connectivity_test as _run_cfproxy_connectivity_test,
+)
 from utils.update_check import RELEASES_PAGE_URL, get_status
 
 from ui.ctk_theme import (
@@ -72,7 +77,6 @@ _TIP_RELAY_TOKEN = "Общий токен авторизации для relay"
 _TIP_DIRECT_WS_TIMEOUT = "Сколько секунд Auto ждёт direct Telegram WS перед попыткой relay"
 
 _CFPROXY_HELP_URL = "https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfProxy.md"
-_CFPROXY_TEST_DCS = [1, 2, 3, 4, 5, 203]
 _FUNDING_URL = "https://github.com/Dark-Avery/tg-ws-proxy/blob/main/docs/Funding.md"
 
 _INNER_W = 396
@@ -125,76 +129,13 @@ def _bind_text_context_menu(widget: Any) -> None:
     target.bind("<Button-3>", _popup, add="+")
 
 
-def _run_cfproxy_connectivity_test(domain: str) -> dict:
-    import base64
-    import socket as _socket
-    import ssl
-
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    results = {}
-    for dc in _CFPROXY_TEST_DCS:
-        host = f"kws{dc}.{domain}"
-        try:
-            with _socket.create_connection((host, 443), timeout=5) as raw:
-                with ctx.wrap_socket(raw, server_hostname=host) as ssock:
-                    ws_key = base64.b64encode(os.urandom(16)).decode()
-                    req = (
-                        f"GET /apiws HTTP/1.1\r\n"
-                        f"Host: {host}\r\n"
-                        f"Upgrade: websocket\r\n"
-                        f"Connection: Upgrade\r\n"
-                        f"Sec-WebSocket-Key: {ws_key}\r\n"
-                        f"Sec-WebSocket-Version: 13\r\n"
-                        f"Sec-WebSocket-Protocol: binary\r\n"
-                        f"\r\n"
-                    ).encode()
-                    ssock.sendall(req)
-                    ssock.settimeout(5)
-                    buf = b""
-                    while b"\r\n\r\n" not in buf:
-                        chunk = ssock.recv(512)
-                        if not chunk:
-                            break
-                        buf += chunk
-                    first = buf.decode("utf-8", errors="replace").split("\r\n")[0]
-                    if "101" in first:
-                        results[dc] = True
-                    else:
-                        results[dc] = first or "нет ответа"
-                    ssock.close()
-                raw.close()
-        except _socket.timeout:
-            results[dc] = "таймаут"
-        except OSError as exc:
-            msg = str(exc)
-            results[dc] = msg[:60] if len(msg) > 60 else msg
-    return results
-
-
-def _run_cfproxy_auto_test(domains: list) -> tuple:
-    merged: dict = {}
-    best_domain = None
-    for domain in reversed(domains):
-        res = _run_cfproxy_connectivity_test(domain)
-        if all(v is True for v in res.values()):
-            return domain, res
-        for dc, value in res.items():
-            if value is True:
-                merged[dc] = True
-                best_domain = domain
-            elif dc not in merged:
-                merged[dc] = value
-    return best_domain, merged
-
-
 def _cfproxy_show_test_results(domain: str, results: dict) -> None:
     import tkinter as _tk
     from tkinter import messagebox as _mb
 
-    ok = [dc for dc, value in results.items() if value is True]
-    fail = [(dc, value) for dc, value in results.items() if value is not True]
+    checks = results.get("checks", {})
+    ok = [dc for dc, value in checks.items() if value is True]
+    fail = [(dc, value) for dc, value in checks.items() if value is not True]
     if len(ok) == len(_CFPROXY_TEST_DCS):
         title = "CF-прокси: всё работает"
         msg = f"\u2713 Все {len(_CFPROXY_TEST_DCS)} серверов доступны через {domain}."
@@ -224,9 +165,10 @@ def _cfproxy_show_auto_test_results(ok_domain, results: dict) -> None:
     import tkinter as _tk
     from tkinter import messagebox as _mb
 
+    checks = results.get("checks", {})
     if ok_domain is not None:
         title = "CF-прокси: доступен"
-        ok = [dc for dc, value in results.items() if value is True]
+        ok = [dc for dc, value in checks.items() if value is True]
         msg = f"\u2713 CF-прокси работает. {len(ok)} из {len(_CFPROXY_TEST_DCS)} серверов доступны."
     else:
         title = "CF-прокси: недоступен"
