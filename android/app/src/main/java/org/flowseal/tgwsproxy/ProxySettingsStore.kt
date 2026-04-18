@@ -14,6 +14,12 @@ class ProxySettingsStore(context: Context) {
                 KEY_DC_IP_TEXT,
                 ProxyConfig.DEFAULT_DC_IP_LINES.joinToString("\n"),
             ).orEmpty(),
+            appearance = ProxyConfig.normalizeAppearance(
+                preferences.getString(
+                    KEY_APPEARANCE,
+                    ProxyConfig.DEFAULT_APPEARANCE,
+                )
+            ),
             upstreamMode = preferences.getString(KEY_UPSTREAM_MODE, UpstreamMode.DIRECT).orEmpty(),
             relayUrlText = preferences.getString(KEY_RELAY_URL, "").orEmpty(),
             relayTokenText = preferences.getString(KEY_RELAY_TOKEN, "").orEmpty(),
@@ -57,6 +63,7 @@ class ProxySettingsStore(context: Context) {
             .putInt(KEY_PORT, config.port)
             .putString(KEY_SECRET, config.secret)
             .putString(KEY_DC_IP_TEXT, config.dcIpList.joinToString("\n"))
+            .putString(KEY_APPEARANCE, config.appearance)
             .putString(KEY_UPSTREAM_MODE, config.upstreamMode)
             .putString(KEY_RELAY_URL, config.relayUrl)
             .putString(KEY_RELAY_TOKEN, config.relayToken)
@@ -81,6 +88,7 @@ class ProxySettingsStore(context: Context) {
         private const val KEY_PORT = "port"
         private const val KEY_SECRET = "secret"
         private const val KEY_DC_IP_TEXT = "dc_ip_text"
+        private const val KEY_APPEARANCE = "appearance"
         private const val KEY_UPSTREAM_MODE = "upstream_mode"
         private const val KEY_RELAY_URL = "relay_url"
         private const val KEY_RELAY_TOKEN = "relay_token"

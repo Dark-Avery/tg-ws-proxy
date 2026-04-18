@@ -7,6 +7,7 @@ data class ProxyConfig(
     val portText: String = DEFAULT_PORT.toString(),
     val secretText: String = DEFAULT_SECRET,
     val dcIpText: String = DEFAULT_DC_IP_LINES.joinToString("\n"),
+    val appearance: String = DEFAULT_APPEARANCE,
     val upstreamMode: String = UpstreamMode.DIRECT,
     val relayUrlText: String = "",
     val relayTokenText: String = "",
@@ -58,6 +59,7 @@ data class ProxyConfig(
             }
         }
 
+        val appearanceValue = normalizeAppearance(appearance)
         val upstreamModeValue = UpstreamMode.normalize(upstreamMode)
         val relayUrlValue = relayUrlText.trim()
         val relayTokenValue = relayTokenText.trim()
@@ -126,6 +128,7 @@ data class ProxyConfig(
                 port = portValue,
                 secret = secretValue,
                 dcIpList = lines,
+                appearance = appearanceValue,
                 upstreamMode = upstreamModeValue,
                 relayUrl = relayUrlValue,
                 relayToken = relayTokenValue,
@@ -145,6 +148,7 @@ data class ProxyConfig(
     companion object {
         const val DEFAULT_HOST = "127.0.0.1"
         const val DEFAULT_PORT = 1443
+        const val DEFAULT_APPEARANCE = "auto"
         const val DEFAULT_DIRECT_WS_TIMEOUT_SECONDS = 10.0
         const val DEFAULT_LOG_MAX_MB = 5.0
         const val DEFAULT_BUFFER_KB = 256
@@ -163,6 +167,14 @@ data class ProxyConfig(
                 value.toInt().toString()
             } else {
                 value.toString()
+            }
+        }
+
+        fun normalizeAppearance(value: String?): String {
+            return when (value?.trim()?.lowercase()) {
+                "light" -> "light"
+                "dark" -> "dark"
+                else -> "auto"
             }
         }
 
@@ -230,6 +242,7 @@ data class NormalizedProxyConfig(
     val port: Int,
     val secret: String,
     val dcIpList: List<String>,
+    val appearance: String,
     val upstreamMode: String,
     val relayUrl: String,
     val relayToken: String,

@@ -19,6 +19,7 @@ class ProxySettingsStoreTest {
                 port = 1443,
                 secret = "0123456789abcdef0123456789abcdef",
                 dcIpList = listOf("2:149.154.167.220", "4:149.154.167.220"),
+                appearance = "dark",
                 upstreamMode = UpstreamMode.AUTO,
                 relayUrl = "wss://relay.example.com/connect",
                 relayToken = "relay-token",
@@ -39,6 +40,7 @@ class ProxySettingsStoreTest {
         assertFalse(restored.cfproxy)
         assertFalse(restored.cfproxyPriority)
         assertEquals("cdn.example.com", restored.cfproxyUserDomainText)
+        assertEquals("dark", restored.appearance)
         assertEquals(UpstreamMode.AUTO, restored.upstreamMode)
         assertEquals("3.5", restored.directWsTimeoutText)
     }
