@@ -149,6 +149,23 @@ class AndroidAppearanceAndNotificationTest {
     }
 
     @Test
+    fun dropdowns_use_non_filtering_adapter_so_current_selection_does_not_collapse_options() {
+        val sourcePath = findResourcePath(
+            "app/src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+            "src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+            "../app/src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+        )
+        val source = File(sourcePath.toString()).readText()
+
+        assertTrue(source.contains("private class NonFilteringArrayAdapter("))
+        assertTrue(source.contains("override fun getFilter(): Filter = noFilter"))
+        assertTrue(source.contains("values = items"))
+        assertTrue(source.contains("binding.appearanceInput.setAdapter(adapter)"))
+        assertTrue(source.contains("binding.upstreamModeInput.setAdapter(adapter)"))
+        assertTrue(source.contains("val adapter = NonFilteringArrayAdapter("))
+    }
+
+    @Test
     fun startup_side_effects_are_deferred_until_after_first_layout_post() {
         val sourcePath = findResourcePath(
             "app/src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",

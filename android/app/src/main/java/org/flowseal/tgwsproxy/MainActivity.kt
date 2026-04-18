@@ -1,12 +1,14 @@
 package org.flowseal.tgwsproxy
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.widget.ArrayAdapter
+import android.widget.Filter
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatDelegate
@@ -530,7 +532,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupUpstreamModeDropdown() {
-        val adapter = ArrayAdapter(
+        val adapter = NonFilteringArrayAdapter(
             this,
             android.R.layout.simple_list_item_1,
             upstreamModeOptions.map { it.second },
@@ -553,7 +555,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupAppearanceDropdown() {
-        val adapter = ArrayAdapter(
+        val adapter = NonFilteringArrayAdapter(
             this,
             android.R.layout.simple_list_item_1,
             appearanceOptions.map { it.second },
@@ -670,6 +672,33 @@ class MainActivity : AppCompatActivity() {
             return enabled
         }
     }
+}
+
+private class NonFilteringArrayAdapter(
+    context: Context,
+    resource: Int,
+    private val items: List<String>,
+) : ArrayAdapter<String>(context, resource, items.toMutableList()) {
+    private val noFilter = object : Filter() {
+        override fun performFiltering(constraint: CharSequence?): FilterResults {
+            return FilterResults().apply {
+                values = items
+                count = items.size
+            }
+        }
+
+        override fun publishResults(constraint: CharSequence?, results: FilterResults?) {
+            clear()
+            addAll(items)
+            notifyDataSetChanged()
+        }
+
+        override fun convertResultToString(resultValue: Any?): CharSequence {
+            return resultValue?.toString().orEmpty()
+        }
+    }
+
+    override fun getFilter(): Filter = noFilter
 }
 
 private enum class PendingPostRecreateAction(val value: String) {
