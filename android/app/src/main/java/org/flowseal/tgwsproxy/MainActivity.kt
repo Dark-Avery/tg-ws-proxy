@@ -28,6 +28,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var settingsStore: ProxySettingsStore
     private var currentUpdateStatus: ProxyUpdateStatus? = null
+    private var pendingPostRecreateAction = PendingPostRecreateAction.NONE
     private val upstreamModeOptions by lazy {
         UpstreamMode.options.map { option ->
             option.value to getString(option.labelResId)
@@ -57,6 +58,10 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         settingsStore = initialSettingsStore
+        pendingPostRecreateAction = savedInstanceState
+            ?.getString(STATE_PENDING_POST_RECREATE_ACTION)
+            ?.let(PendingPostRecreateAction::fromValue)
+            ?: PendingPostRecreateAction.NONE
         setContentView(binding.root)
 
         binding.startButton.setOnClickListener { onStartClicked() }
@@ -95,15 +100,31 @@ class MainActivity : AppCompatActivity() {
 
         val config = settingsStore.load()
         renderConfig(config)
-        if (config.checkUpdates) {
-            refreshUpdateStatus(checkNow = true)
-        } else {
-            currentUpdateStatus = null
-            renderUpdateStatus(null, false)
+        binding.root.post {
+            if (isFinishing || isDestroyed) {
+                return@post
+            }
+            if (config.checkUpdates) {
+                refreshUpdateStatus(checkNow = true)
+            } else {
+                currentUpdateStatus = null
+                renderUpdateStatus(null, false)
+            }
+            requestNotificationPermissionIfNeeded()
+            observeServiceState()
+            renderSystemStatus()
+            resumePendingPostRecreateActionIfNeeded()
         }
-        requestNotificationPermissionIfNeeded()
-        observeServiceState()
-        renderSystemStatus()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        if (pendingPostRecreateAction != PendingPostRecreateAction.NONE) {
+            outState.putString(
+                STATE_PENDING_POST_RECREATE_ACTION,
+                pendingPostRecreateAction.value,
+            )
+        }
     }
 
     override fun onResume() {
@@ -111,7 +132,10 @@ class MainActivity : AppCompatActivity() {
         renderSystemStatus()
     }
 
-    private fun onSaveClicked(showMessage: Boolean): NormalizedProxyConfig? {
+    private fun onSaveClicked(
+        showMessage: Boolean,
+        postRecreateAction: PendingPostRecreateAction = PendingPostRecreateAction.NONE,
+    ): NormalizedProxyConfig? {
         val validation = collectConfigFromForm().validate()
         val config = validation.normalized
         if (config == null) {
@@ -122,7 +146,11 @@ class MainActivity : AppCompatActivity() {
 
         binding.errorText.isVisible = false
         settingsStore.save(config)
-        applyAppearance(config.appearance)
+        if (applyAppearance(config.appearance)) {
+            pendingPostRecreateAction = postRecreateAction
+            return null
+        }
+        pendingPostRecreateAction = PendingPostRecreateAction.NONE
         if (showMessage) {
             Snackbar.make(binding.root, R.string.settings_saved, Snackbar.LENGTH_SHORT).show()
         }
@@ -136,13 +164,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onStartClicked() {
-        onSaveClicked(showMessage = false) ?: return
+        onSaveClicked(
+            showMessage = false,
+            postRecreateAction = PendingPostRecreateAction.START,
+        ) ?: return
         ProxyForegroundService.start(this)
         Snackbar.make(binding.root, R.string.service_start_requested, Snackbar.LENGTH_SHORT).show()
     }
 
     private fun onRestartClicked() {
-        onSaveClicked(showMessage = false) ?: return
+        onSaveClicked(
+            showMessage = false,
+            postRecreateAction = PendingPostRecreateAction.RESTART,
+        ) ?: return
         ProxyForegroundService.restart(this)
         Snackbar.make(binding.root, R.string.service_restart_requested, Snackbar.LENGTH_SHORT).show()
     }
@@ -152,9 +186,46 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onOpenTelegramClicked() {
-        val config = onSaveClicked(showMessage = false) ?: return
+        val config = onSaveClicked(
+            showMessage = false,
+            postRecreateAction = PendingPostRecreateAction.OPEN_TELEGRAM,
+        ) ?: return
         if (!TelegramProxyIntent.open(this, config)) {
             Snackbar.make(binding.root, R.string.telegram_not_found, Snackbar.LENGTH_LONG).show()
+        }
+    }
+
+    private fun resumePendingPostRecreateActionIfNeeded() {
+        val action = pendingPostRecreateAction
+        if (action == PendingPostRecreateAction.NONE) {
+            return
+        }
+        pendingPostRecreateAction = PendingPostRecreateAction.NONE
+        when (action) {
+            PendingPostRecreateAction.NONE -> Unit
+            PendingPostRecreateAction.START -> {
+                ProxyForegroundService.start(this)
+                Snackbar.make(
+                    binding.root,
+                    R.string.service_start_requested,
+                    Snackbar.LENGTH_SHORT,
+                ).show()
+            }
+            PendingPostRecreateAction.RESTART -> {
+                ProxyForegroundService.restart(this)
+                Snackbar.make(
+                    binding.root,
+                    R.string.service_restart_requested,
+                    Snackbar.LENGTH_SHORT,
+                ).show()
+            }
+            PendingPostRecreateAction.OPEN_TELEGRAM -> {
+                val config = settingsStore.load().validate().normalized ?: return
+                if (!TelegramProxyIntent.open(this, config)) {
+                    Snackbar.make(binding.root, R.string.telegram_not_found, Snackbar.LENGTH_LONG)
+                        .show()
+                }
+            }
         }
     }
 
@@ -498,15 +569,17 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun applyAppearance(mode: String) {
+    private fun applyAppearance(mode: String): Boolean {
         val nightMode = when (ProxyConfig.normalizeAppearance(mode)) {
             "light" -> AppCompatDelegate.MODE_NIGHT_NO
             "dark" -> AppCompatDelegate.MODE_NIGHT_YES
             else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
         }
-        if (AppCompatDelegate.getDefaultNightMode() != nightMode) {
+        val changed = AppCompatDelegate.getDefaultNightMode() != nightMode
+        if (changed) {
             AppCompatDelegate.setDefaultNightMode(nightMode)
         }
+        return changed
     }
 
     private fun appearanceLabelForValue(value: String): String {
@@ -572,6 +645,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val FUNDING_URL =
             "https://github.com/Dark-Avery/tg-ws-proxy/blob/main/docs/Funding.md"
+        private const val STATE_PENDING_POST_RECREATE_ACTION = "pending_post_recreate_action"
 
         @JvmStatic
         fun appearanceModes(): List<String> = listOf("auto", "light", "dark")
@@ -594,6 +668,19 @@ class MainActivity : AppCompatActivity() {
         @JvmStatic
         fun shouldEnableCustomCfProxyDomain(enabled: Boolean): Boolean {
             return enabled
+        }
+    }
+}
+
+private enum class PendingPostRecreateAction(val value: String) {
+    NONE("none"),
+    START("start"),
+    RESTART("restart"),
+    OPEN_TELEGRAM("open_telegram");
+
+    companion object {
+        fun fromValue(value: String): PendingPostRecreateAction {
+            return entries.firstOrNull { it.value == value } ?: NONE
         }
     }
 }

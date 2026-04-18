@@ -147,4 +147,63 @@ class AndroidAppearanceAndNotificationTest {
         assertFalse(source.contains("binding.appearanceInput.setOnItemClickListener { _, _, _, _ ->\n            applyAppearance(selectedAppearanceValue())"))
         assertFalse(renderConfigBody.contains("applyAppearance(config.appearance)"))
     }
+
+    @Test
+    fun startup_side_effects_are_deferred_until_after_first_layout_post() {
+        val sourcePath = findResourcePath(
+            "app/src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+            "src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+            "../app/src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+        )
+        val source = File(sourcePath.toString()).readText()
+        val postBlockStart = source.indexOf("binding.root.post {")
+        val onResumeStart = source.indexOf("override fun onResume() {")
+        val postBlock = source.substring(postBlockStart, onResumeStart)
+
+        assertTrue(postBlockStart >= 0)
+        assertTrue(postBlock.contains("if (isFinishing || isDestroyed) {"))
+        assertTrue(postBlock.contains("refreshUpdateStatus(checkNow = true)"))
+        assertTrue(postBlock.contains("renderUpdateStatus(null, false)"))
+        assertTrue(postBlock.contains("requestNotificationPermissionIfNeeded()"))
+        assertTrue(postBlock.contains("observeServiceState()"))
+        assertTrue(postBlock.contains("renderSystemStatus()"))
+        assertTrue(postBlock.contains("resumePendingPostRecreateActionIfNeeded()"))
+    }
+
+    @Test
+    fun save_flow_stops_touching_old_ui_after_theme_switch() {
+        val sourcePath = findResourcePath(
+            "app/src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+            "src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+            "../app/src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+        )
+        val source = File(sourcePath.toString()).readText()
+        val onSaveStart = source.indexOf(
+            "private fun onSaveClicked(\n        showMessage: Boolean,\n        postRecreateAction: PendingPostRecreateAction = PendingPostRecreateAction.NONE,\n    ): NormalizedProxyConfig? {"
+        )
+        val onStartClicked = source.indexOf("private fun onStartClicked() {")
+        val onSaveBody = source.substring(onSaveStart, onStartClicked)
+
+        assertTrue(onSaveBody.contains("if (applyAppearance(config.appearance)) {"))
+        assertTrue(onSaveBody.contains("pendingPostRecreateAction = postRecreateAction"))
+        assertTrue(onSaveBody.contains("return null"))
+        assertTrue(onSaveBody.indexOf("if (applyAppearance(config.appearance)) {") < onSaveBody.indexOf("Snackbar.make(binding.root"))
+    }
+
+    @Test
+    fun theme_switch_save_preserves_requested_action_for_recreated_activity() {
+        val sourcePath = findResourcePath(
+            "app/src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+            "src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+            "../app/src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+        )
+        val source = File(sourcePath.toString()).readText()
+
+        assertTrue(source.contains("private var pendingPostRecreateAction = PendingPostRecreateAction.NONE"))
+        assertTrue(source.contains("resumePendingPostRecreateActionIfNeeded()"))
+        assertTrue(source.contains("outState.putString(\n                STATE_PENDING_POST_RECREATE_ACTION,\n                pendingPostRecreateAction.value,"))
+        assertTrue(source.contains("PendingPostRecreateAction.START"))
+        assertTrue(source.contains("PendingPostRecreateAction.RESTART"))
+        assertTrue(source.contains("PendingPostRecreateAction.OPEN_TELEGRAM"))
+    }
 }
