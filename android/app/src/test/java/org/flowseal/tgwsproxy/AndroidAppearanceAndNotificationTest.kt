@@ -115,4 +115,17 @@ class AndroidAppearanceAndNotificationTest {
         assertTrue(donateIndex in 0 until hostIndex)
         assertTrue(secretRegenIndex > 0)
     }
+
+    @Test
+    fun appearance_logic_uses_global_delegate_without_local_override() {
+        val sourcePath = findResourcePath(
+            "app/src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+            "src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+            "../app/src/main/java/org/flowseal/tgwsproxy/MainActivity.kt",
+        )
+        val source = File(sourcePath.toString()).readText()
+
+        assertFalse(source.contains("delegate.localNightMode"))
+        assertTrue(source.contains("AppCompatDelegate.getDefaultNightMode() != nightMode"))
+    }
 }

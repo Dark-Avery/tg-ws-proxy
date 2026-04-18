@@ -506,9 +506,8 @@ class MainActivity : AppCompatActivity() {
             "dark" -> AppCompatDelegate.MODE_NIGHT_YES
             else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
         }
-        AppCompatDelegate.setDefaultNightMode(nightMode)
-        if (delegate.localNightMode != nightMode) {
-            delegate.localNightMode = nightMode
+        if (AppCompatDelegate.getDefaultNightMode() != nightMode) {
+            AppCompatDelegate.setDefaultNightMode(nightMode)
         }
     }
 
