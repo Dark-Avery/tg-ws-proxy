@@ -110,6 +110,14 @@ data class ProxyConfig(
         val cfproxyValue = cfproxy
         val cfproxyPriorityValue = cfproxyPriority
         val cfproxyUserDomainValue = cfproxyUserDomainText.trim()
+        if (
+            cfproxyUserDomainValue.isNotEmpty() &&
+            !isHostname(cfproxyUserDomainValue)
+        ) {
+            return ValidationResult(
+                errorMessage = "CfProxy domain должен быть доменным именем без схемы и пути."
+            )
+        }
 
         return ValidationResult(
             normalized = NormalizedProxyConfig(
@@ -184,6 +192,29 @@ data class ProxyConfig(
                         !uri.host.isNullOrBlank()
                 }
                 .getOrDefault(false)
+        }
+
+        private fun isHostname(value: String): Boolean {
+            if (
+                value.contains("://") ||
+                value.contains("/") ||
+                value.contains("\\") ||
+                value.any(Char::isWhitespace)
+            ) {
+                return false
+            }
+            val labels = value.split(".")
+            if (labels.isEmpty()) {
+                return false
+            }
+
+            return labels.all { label ->
+                label.isNotEmpty() &&
+                    label.length <= 63 &&
+                    label.first().isLetterOrDigit() &&
+                    label.last().isLetterOrDigit() &&
+                    label.all { it.isLetterOrDigit() || it == '-' }
+            }
         }
     }
 }
