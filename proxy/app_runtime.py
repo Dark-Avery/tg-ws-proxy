@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio as _asyncio
-import inspect
 import json
 import logging
 import logging.handlers
@@ -170,63 +169,19 @@ class ProxyAppRuntime:
     def _build_run_proxy_kwargs(
         self,
         stop_ev: _asyncio.Event,
-        upstream_mode: str,
-        relay_url: str,
-        relay_token: str,
-        direct_ws_timeout_seconds: float,
     ) -> dict:
-        call_kwargs = {"stop_event": stop_ev}
-        extra_kwargs = {
-            "upstream_mode": upstream_mode,
-            "relay_url": relay_url or None,
-            "relay_token": relay_token,
-            "direct_ws_timeout_seconds": direct_ws_timeout_seconds,
-        }
-
-        try:
-            signature = inspect.signature(self.run_proxy)
-        except (TypeError, ValueError):
-            call_kwargs.update(extra_kwargs)
-            return call_kwargs
-
-        params = signature.parameters
-        if any(
-            param.kind == inspect.Parameter.VAR_KEYWORD
-            for param in params.values()
-        ):
-            call_kwargs.update(extra_kwargs)
-            return call_kwargs
-
-        for key, value in extra_kwargs.items():
-            param = params.get(key)
-            if param and param.kind in (
-                inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                inspect.Parameter.KEYWORD_ONLY,
-            ):
-                call_kwargs[key] = value
-        return call_kwargs
+        return {"stop_event": stop_ev}
 
     def _run_proxy_thread(self, port: int, dc_opt: Dict[int, str],
-                          host: str = "127.0.0.1",
-                          upstream_mode: str = "telegram_ws_direct",
-                          relay_url: str = "",
-                          relay_token: str = "",
-                          direct_ws_timeout_seconds: float = 10.0):
+                          host: str = "127.0.0.1"):
         loop = _asyncio.new_event_loop()
         _asyncio.set_event_loop(loop)
         stop_ev = _asyncio.Event()
         self._async_stop = (loop, stop_ev)
 
         try:
-            run_proxy_kwargs = self._build_run_proxy_kwargs(
-                stop_ev,
-                upstream_mode,
-                relay_url,
-                relay_token,
-                direct_ws_timeout_seconds,
-            )
             loop.run_until_complete(
-                self.run_proxy(**run_proxy_kwargs)
+                self.run_proxy(**self._build_run_proxy_kwargs(stop_ev))
             )
         except Exception as exc:
             self.log.error("Proxy thread crashed: %s", exc)
@@ -254,15 +209,6 @@ class ProxyAppRuntime:
         port = active_cfg.get("port", self.default_config["port"])
         host = active_cfg.get("host", self.default_config["host"])
         dc_ip_list = active_cfg.get("dc_ip", self.default_config["dc_ip"])
-        upstream_mode = active_cfg.get(
-            "upstream_mode", self.default_config["upstream_mode"])
-        relay_url = active_cfg.get(
-            "relay_url", self.default_config["relay_url"])
-        relay_token = active_cfg.get(
-            "relay_token", self.default_config["relay_token"])
-        direct_ws_timeout_seconds = float(active_cfg.get(
-            "direct_ws_timeout_seconds",
-            self.default_config["direct_ws_timeout_seconds"]))
         buf_kb = active_cfg.get("buf_kb", self.default_config["buf_kb"])
         pool_size = active_cfg.get(
             "pool_size", self.default_config["pool_size"])
@@ -286,15 +232,7 @@ class ProxyAppRuntime:
         tg_ws_proxy._WS_POOL_SIZE = max(0, pool_size)
         self._proxy_thread = self.thread_factory(
             target=self._run_proxy_thread,
-            args=(
-                port,
-                dc_opt,
-                host,
-                upstream_mode,
-                relay_url,
-                relay_token,
-                direct_ws_timeout_seconds,
-            ),
+            args=(port, dc_opt, host),
             daemon=True,
             name="proxy")
         self._proxy_thread.start()

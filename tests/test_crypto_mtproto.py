@@ -105,7 +105,7 @@ class MtProtoHandshakeTests(unittest.TestCase):
 
         self.assertIsNone(result)
 
-    def test_generate_relay_init_encodes_proto_and_signed_dc(self):
+    def test_generate_handshake_init_encodes_proto_and_signed_dc(self):
         relay_init = _generate_relay_init(PROTO_TAG_ABRIDGED, -3)
         decryptor = Cipher(
             algorithms.AES(relay_init[8:40]),

@@ -236,13 +236,7 @@ def _run_proxy_thread(on_port_busy: Callable[[str], None]) -> None:
 
     try:
         loop.run_until_complete(
-            tg_ws_proxy._run(
-                stop_event=stop_ev,
-                upstream_mode=pc.upstream_mode,
-                relay_url=pc.relay_url,
-                relay_token=pc.relay_token,
-                direct_ws_timeout_seconds=pc.direct_ws_timeout_seconds,
-            )
+            tg_ws_proxy._run(stop_event=stop_ev)
         )
     except Exception as exc:
         log.error("Proxy thread crashed: %s", exc)
@@ -280,15 +274,6 @@ def apply_proxy_config(cfg: dict) -> bool:
     pc.cfproxy_user_domain = str(
         cfg.get("cfproxy_user_domain", DEFAULT_CONFIG["cfproxy_user_domain"])
     ).strip()
-    pc.upstream_mode = cfg.get("upstream_mode", DEFAULT_CONFIG["upstream_mode"])
-    pc.relay_url = cfg.get("relay_url", DEFAULT_CONFIG["relay_url"])
-    pc.relay_token = cfg.get("relay_token", DEFAULT_CONFIG["relay_token"])
-    pc.direct_ws_timeout_seconds = float(
-        cfg.get(
-            "direct_ws_timeout_seconds",
-            DEFAULT_CONFIG["direct_ws_timeout_seconds"],
-        )
-    )
     return True
 
 
