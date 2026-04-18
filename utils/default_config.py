@@ -24,6 +24,7 @@ _TRAY_DEFAULTS_COMMON: Dict[str, Any] = {
     "cfproxy": True,
     "cfproxy_priority": True,
     "cfproxy_user_domain": "",
+    "appearance": "auto",
 }
 
 
