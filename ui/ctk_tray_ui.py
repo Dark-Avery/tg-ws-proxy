@@ -71,29 +71,15 @@ _TIP_CFPROXY_USER_DOMAIN_CB = (
 )
 _TIP_SAVE = "Сохранить настройки"
 _TIP_CANCEL = "Закрыть окно без сохранения изменений"
-_TIP_UPSTREAM_MODE = "Выбор маршрута: direct Telegram WS, auto с relay fallback, либо relay only"
-_TIP_RELAY_URL = "WebSocket URL self-hosted relay, например wss://relay.example.com/connect"
-_TIP_RELAY_TOKEN = "Общий токен авторизации для relay"
-_TIP_DIRECT_WS_TIMEOUT = "Сколько секунд Auto ждёт direct Telegram WS перед попыткой relay"
 
 _CFPROXY_HELP_URL = "https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfProxy.md"
-_FUNDING_URL = "https://github.com/Dark-Avery/tg-ws-proxy/blob/main/docs/Funding.md"
+_FUNDING_URL = "https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/Funding.md"
 
 _INNER_W = 396
 _APPEARANCE_OPTIONS = ["Авто", "Светлая", "Тёмная"]
 _APPEARANCE_FROM_CFG = {"auto": "Авто", "light": "Светлая", "dark": "Тёмная"}
 _APPEARANCE_TO_CFG = {"Авто": "auto", "Светлая": "light", "Тёмная": "dark"}
 _APPEARANCE_TO_CTK = {"auto": "system", "light": "Light", "dark": "Dark"}
-
-
-def _format_timeout_seconds(value: object) -> str:
-    try:
-        numeric = float(value)
-    except (TypeError, ValueError):
-        numeric = 10.0
-    if numeric.is_integer():
-        return str(int(numeric))
-    return str(numeric)
 
 
 def _bind_text_context_menu(widget: Any) -> None:
@@ -280,10 +266,6 @@ class TrayConfigFormWidgets:
     port_var: Any
     secret_var: Any
     dc_textbox: Any
-    upstream_mode_var: Any
-    relay_url_var: Any
-    relay_token_var: Any
-    direct_ws_timeout_var: Any
     verbose_var: Any
     adv_entries: List[Any]
     adv_keys: Tuple[str, ...]
@@ -494,98 +476,6 @@ def install_tray_config_form(
     cf_custom_cb_var.trace_add("write", _sync_domain_entry)
     _sync_domain_entry()
 
-    routing = _config_section(ctk, frame, theme, "Маршрутизация upstream")
-
-    upstream_mode_var = ctk.StringVar(value=str(cfg.get("upstream_mode", default_config["upstream_mode"])))
-    relay_url_var = ctk.StringVar(value=str(cfg.get("relay_url", default_config["relay_url"])))
-    relay_token_var = ctk.StringVar(value=str(cfg.get("relay_token", default_config["relay_token"])))
-
-    mode_col = ctk.CTkFrame(routing, fg_color="transparent")
-    mode_col.pack(fill="x", pady=(0, 6))
-    mode_lbl = _label(ctk, mode_col, theme, "Режим upstream", size=11)
-    mode_lbl.pack(anchor="w", pady=(0, 2))
-    mode_values = {
-        "Direct Telegram WS": "telegram_ws_direct",
-        "Auto: direct -> relay -> TCP": "auto",
-        "Relay only": "relay_ws",
-    }
-    reverse_mode_values = {v: k for k, v in mode_values.items()}
-    upstream_mode_menu = ctk.CTkOptionMenu(
-        mode_col,
-        values=list(mode_values.keys()),
-        variable=ctk.StringVar(
-            value=reverse_mode_values.get(
-                upstream_mode_var.get(),
-                "Direct Telegram WS",
-            )
-        ),
-        width=_INNER_W,
-        height=32,
-        font=(theme.ui_font_family, 13),
-        fg_color=theme.field_bg,
-        button_color=theme.tg_blue,
-        button_hover_color=theme.tg_blue_hover,
-        text_color=theme.text_primary,
-        dropdown_fg_color=theme.bg,
-        dropdown_text_color=theme.text_primary,
-        command=lambda selected: upstream_mode_var.set(mode_values[selected]),
-    )
-    upstream_mode_menu.pack(fill="x")
-    attach_tooltip_to_widgets([mode_lbl, upstream_mode_menu, mode_col], _TIP_UPSTREAM_MODE)
-
-    relay_url_col, relay_url_var_entry = _labeled_entry(
-        ctk, routing, theme, "Relay URL",
-        relay_url_var.get(),
-        tip=_TIP_RELAY_URL,
-        width=_INNER_W,
-        pack_fill=True,
-    )
-    relay_url_col.pack(fill="x", pady=(0, 6))
-    relay_url_var = relay_url_var_entry
-
-    relay_token_col, relay_token_var_entry = _labeled_entry(
-        ctk, routing, theme, "Relay token",
-        relay_token_var.get(),
-        tip=_TIP_RELAY_TOKEN,
-        width=_INNER_W,
-        pack_fill=True,
-    )
-    relay_token_col.pack(fill="x")
-    relay_token_var = relay_token_var_entry
-
-    direct_ws_timeout_col, direct_ws_timeout_var = _labeled_entry(
-        ctk, routing, theme, "Таймаут direct WS перед relay (сек)",
-        _format_timeout_seconds(
-            cfg.get(
-                "direct_ws_timeout_seconds",
-                default_config["direct_ws_timeout_seconds"],
-            )
-        ),
-        tip=_TIP_DIRECT_WS_TIMEOUT,
-        width=_INNER_W,
-        pack_fill=True,
-    )
-
-    def _update_upstream_controls(*_args: Any) -> None:
-        selected_mode = upstream_mode_var.get().strip() or default_config["upstream_mode"]
-        relay_needed = selected_mode in ("auto", "relay_ws")
-        timeout_needed = selected_mode == "auto"
-
-        if relay_needed:
-            relay_url_col.pack(fill="x", pady=(0, 6))
-            relay_token_col.pack(fill="x")
-        else:
-            relay_url_col.pack_forget()
-            relay_token_col.pack_forget()
-
-        if timeout_needed:
-            direct_ws_timeout_col.pack(fill="x", pady=(6, 0))
-        else:
-            direct_ws_timeout_col.pack_forget()
-
-    upstream_mode_var.trace_add("write", _update_upstream_controls)
-    _update_upstream_controls()
-
     log_inner = _config_section(ctk, frame, theme, "Логи и производительность")
 
     verbose_var = ctk.BooleanVar(value=cfg.get("verbose", False))
@@ -672,10 +562,6 @@ def install_tray_config_form(
     return TrayConfigFormWidgets(
         host_var=host_var, port_var=port_var, secret_var=secret_var,
         dc_textbox=dc_textbox,
-        upstream_mode_var=upstream_mode_var,
-        relay_url_var=relay_url_var,
-        relay_token_var=relay_token_var,
-        direct_ws_timeout_var=direct_ws_timeout_var,
         verbose_var=verbose_var,
         adv_entries=adv_entries, adv_keys=adv_keys,
         autostart_var=autostart_var, check_updates_var=check_updates_var,
@@ -747,23 +633,8 @@ def validate_config_form(
         "port": port_val,
         "secret": secret_val,
         "dc_ip": lines,
-        "upstream_mode": widgets.upstream_mode_var.get().strip() or default_config["upstream_mode"],
-        "relay_url": widgets.relay_url_var.get().strip(),
-        "relay_token": widgets.relay_token_var.get().strip(),
-        "direct_ws_timeout_seconds": default_config["direct_ws_timeout_seconds"],
         "verbose": widgets.verbose_var.get(),
     }
-    try:
-        direct_timeout = float(widgets.direct_ws_timeout_var.get().strip())
-        if direct_timeout <= 0:
-            raise ValueError
-    except ValueError:
-        return "Таймаут direct WS должен быть положительным числом."
-    new_cfg["direct_ws_timeout_seconds"] = direct_timeout
-    if new_cfg["upstream_mode"] == "relay_ws" and not new_cfg["relay_url"]:
-        return "Для режима Relay only нужно указать Relay URL."
-    if new_cfg["relay_url"] and not _validate_ws_url(new_cfg["relay_url"]):
-        return "Relay URL должен быть в формате ws://host/path или wss://host/path."
     if include_autostart:
         new_cfg["autostart"] = (
             widgets.autostart_var.get()
@@ -783,16 +654,6 @@ def validate_config_form(
     if widgets.appearance_var is not None:
         new_cfg["appearance"] = _APPEARANCE_TO_CFG.get(widgets.appearance_var.get(), "auto")
     return new_cfg
-
-
-def _validate_ws_url(value: str) -> bool:
-    from urllib.parse import urlparse
-
-    try:
-        parsed = urlparse(value.strip())
-    except Exception:
-        return False
-    return parsed.scheme in ("ws", "wss") and bool(parsed.hostname)
 
 
 def install_tray_config_buttons(
