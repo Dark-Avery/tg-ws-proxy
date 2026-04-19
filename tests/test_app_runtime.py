@@ -52,11 +52,11 @@ class ProxyAppRuntimeTests(unittest.TestCase):
             self.assertEqual(cfg["port"], 9050)
             self.assertEqual(cfg["host"], "127.0.0.2")
             self.assertEqual(cfg["dc_ip"], DEFAULT_CONFIG["dc_ip"])
-            self.assertEqual(
-                cfg["direct_ws_timeout_seconds"],
-                DEFAULT_CONFIG["direct_ws_timeout_seconds"],
-            )
             self.assertEqual(cfg["verbose"], DEFAULT_CONFIG["verbose"])
+            self.assertNotIn("upstream_mode", cfg)
+            self.assertNotIn("relay_url", cfg)
+            self.assertNotIn("relay_token", cfg)
+            self.assertNotIn("direct_ws_timeout_seconds", cfg)
 
     def test_invalid_config_file_falls_back_to_defaults(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -122,10 +122,6 @@ class ProxyAppRuntimeTests(unittest.TestCase):
                     "host": "127.0.0.1",
                     "secret": "0123456789abcdef0123456789abcdef",
                     "dc_ip": list(DEFAULT_CONFIG["dc_ip"]),
-                    "upstream_mode": "telegram_ws_direct",
-                    "relay_url": "",
-                    "relay_token": "",
-                    "direct_ws_timeout_seconds": 10.0,
                     "buf_kb": 256,
                     "pool_size": 4,
                     "verbose": False,
