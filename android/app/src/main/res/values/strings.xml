@@ -78,6 +78,7 @@
     <string name="notification_details">Route: %1$s\n%2$s\nTraffic: ↑ %3$s/s ↓ %4$s/s\nTransferred: ↑ %5$s ↓ %6$s</string>
     <string name="notification_action_stop">Stop</string>
     <string name="notification_route_direct">Direct Telegram WS</string>
+    <string name="notification_route_cfproxy">CfProxy fallback</string>
     <string name="notification_route_tcp">Direct TCP fallback</string>
     <string name="notification_route_unknown">Starting…</string>
     <string name="saved_config_invalid">Saved proxy settings are invalid.</string>

@@ -121,6 +121,26 @@ chmod +x TgWsProxy_linux_amd64
 
 При первом запуске откроется окно с инструкцией. Приложение работает в системном трее (требуется AppIndicator).
 
+### Android
+
+Перейдите на [страницу релизов](https://github.com/Flowseal/tg-ws-proxy/releases) и скачайте:
+
+- **`tg-ws-proxy-android-vX.Y.Z.apk`** для современных 64-bit устройств
+- **`tg-ws-proxy-android-vX.Y.Z-legacy32.apk`** для 32-bit устройств (`armeabi-v7a`), где обычный APK не устанавливается из-за ABI
+
+После установки:
+
+- откройте приложение
+- проверьте блок **Android background limits**
+- при необходимости отключите battery optimization и снимите background restrictions
+- нажмите **Start Service**
+- нажмите **Open in Telegram**
+
+Для стабильной работы на Android:
+
+- разрешите уведомления
+- отключите battery optimization для приложения
+
 ## Установка из исходников
 
 ### Консольный proxy
@@ -151,6 +171,34 @@ tg-ws-proxy-tray-macos
 ```bash
 pip install -e .
 tg-ws-proxy-tray-linux
+```
+
+### Android
+
+Локальная debug-сборка:
+
+```bash
+./android/build-local-debug.sh assembleStandardDebug
+./android/build-local-debug.sh assembleLegacy32Debug
+```
+
+Результат:
+
+```text
+android/app/build/outputs/apk/standard/debug/app-standard-debug.apk
+android/app/build/outputs/apk/legacy32/debug/app-legacy32-debug.apk
+```
+
+Для локальной signed release-сборки нужны keystore и переменные окружения:
+
+```bash
+export ANDROID_KEYSTORE_FILE=/path/to/tg-ws-proxy-release.keystore
+export ANDROID_KEYSTORE_PASSWORD=...
+export ANDROID_KEY_ALIAS=tg-ws-proxy
+export ANDROID_KEY_PASSWORD=...
+cd android
+./build-local-debug.sh assembleStandardRelease
+./build-local-debug.sh assembleLegacy32Release
 ```
 
 ### Консольный режим из исходников
@@ -290,6 +338,8 @@ Tray-приложение хранит данные в:
 - Intel macOS 10.15+
 - Apple Silicon macOS 11.0+
 - Linux x86_64 (требуется AppIndicator для системного трея)
+- Android arm64-v8a для `tg-ws-proxy-android-vX.Y.Z.apk`
+- Android armeabi-v7a для `tg-ws-proxy-android-vX.Y.Z-legacy32.apk`
 
 ## Лицензия
 

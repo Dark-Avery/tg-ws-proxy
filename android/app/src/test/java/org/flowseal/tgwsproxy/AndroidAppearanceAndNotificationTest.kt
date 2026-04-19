@@ -143,6 +143,29 @@ class AndroidAppearanceAndNotificationTest {
     }
 
     @Test
+    fun notification_route_mapping_handles_cfproxy_fallback_explicitly() {
+        val servicePath = findResourcePath(
+            "app/src/main/java/org/flowseal/tgwsproxy/ProxyForegroundService.kt",
+            "src/main/java/org/flowseal/tgwsproxy/ProxyForegroundService.kt",
+            "../app/src/main/java/org/flowseal/tgwsproxy/ProxyForegroundService.kt",
+        )
+        val stringsPath = findResourcePath(
+            "app/src/main/res/values/strings.xml",
+            "src/main/res/values/strings.xml",
+            "../app/src/main/res/values/strings.xml",
+        )
+        val serviceSource = File(servicePath.toString()).readText()
+        val stringsXml = File(stringsPath.toString()).readText()
+
+        assertTrue(
+            serviceSource.contains(
+                "\"cfproxy_fallback\" -> getString(R.string.notification_route_cfproxy)",
+            ),
+        )
+        assertTrue(stringsXml.contains("""<string name="notification_route_cfproxy">CfProxy fallback</string>"""))
+    }
+
+    @Test
     fun app_theme_uses_daynight_parent() {
         val resourcePath = findResourcePath(
             "app/src/main/res/values/themes.xml",

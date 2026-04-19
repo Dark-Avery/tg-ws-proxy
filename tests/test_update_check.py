@@ -52,6 +52,17 @@ class UpdateCheckTests(unittest.TestCase):
         self.assertFalse(status["ahead_of_release"])
         self.assertEqual(status["latest"], __version__)
 
+    def test_release_urls_point_to_flowseal_repo(self):
+        self.assertEqual(update_check.REPO, "Flowseal/tg-ws-proxy")
+        self.assertEqual(
+            update_check.RELEASES_LATEST_API,
+            "https://api.github.com/repos/Flowseal/tg-ws-proxy/releases/latest",
+        )
+        self.assertEqual(
+            update_check.RELEASES_PAGE_URL,
+            "https://github.com/Flowseal/tg-ws-proxy/releases/latest",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
