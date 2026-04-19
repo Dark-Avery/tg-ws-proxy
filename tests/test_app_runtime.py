@@ -29,6 +29,16 @@ class _FakeThread:
 
 
 class ProxyAppRuntimeTests(unittest.TestCase):
+    def test_core_proxy_config_is_direct_only(self):
+        import proxy.config as config_mod
+
+        config_dict = config_mod.ProxyConfig().__dict__
+
+        self.assertNotIn("upstream_mode", config_dict)
+        self.assertNotIn("relay_url", config_dict)
+        self.assertNotIn("relay_token", config_dict)
+        self.assertNotIn("direct_ws_timeout_seconds", config_dict)
+
     def test_load_config_returns_defaults_when_missing(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             runtime = ProxyAppRuntime(Path(tmpdir))

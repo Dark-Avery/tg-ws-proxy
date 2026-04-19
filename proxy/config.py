@@ -49,10 +49,6 @@ class ProxyConfig:
     cfproxy_user_domain: str = ''
     fake_tls_domain: str = ''
     proxy_protocol: bool = False
-    upstream_mode: str = 'telegram_ws_direct'
-    relay_url: str = ''
-    relay_token: str = ''
-    direct_ws_timeout_seconds: float = 10.0
 
 
 proxy_config = ProxyConfig()
